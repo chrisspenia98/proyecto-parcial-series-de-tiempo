@@ -1,0 +1,2897 @@
+---
+title: "Proyecto Parcial Series de Tiempo"
+subtitle: "Análisis y modelación de series temporales"
+author:
+  - name: "Juan David Matallana Díaz"
+  - name: "Cristian Andrés Peña Peña"
+lang: es
+format:
+  html:
+    toc: true
+    toc-title: "Contenido"
+    number-sections: true
+    code-fold: true
+    code-summary: "Ver código"
+    code-tools: true
+    embed-resources: true
+editor: visual
+execute:
+  echo: true
+  message: false
+---
+
+# Declaración sobre el uso de inteligencia artificial {.unnumbered}
+
+Este trabajo se elaboró originalmente durante el curso de Series de Tiempo de la Universidad Nacional de Colombia y fue presentado en uno de los semestres cursados por los autores. Esta nueva versión incorpora las correcciones sugeridas y los conocimientos adquiridos posteriormente, con el propósito de ofrecer un documento más completo, claro y riguroso.
+
+Los autores utilizaron ChatGPT, de OpenAI, como herramienta de apoyo para revisar y mejorar el código en R, la sintaxis y la redacción del documento. Su uso también contribuyó a revisar explicaciones metodológicas y la interpretación de resultados, tomando como punto de partida el trabajo presentado originalmente.
+
+Los autores asumen la responsabilidad por la revisión y validación del código, los procedimientos estadísticos, los gráficos, las referencias y las conclusiones incluidas en esta versión. La asistencia de inteligencia artificial complementó el proceso de elaboración del documento; la evaluación crítica del contenido y las decisiones finales corresponden a los autores.
+
+# Punto 1: Análisis de los gastos en publicidad
+
+## Enunciado
+
+El archivo `P1.xlsx` contiene información sobre los gastos mensuales en publicidad, en millones de dólares, registrados en la variable `ADVER`, desde mayo de 1970 hasta junio de 2006.
+
+Utilizando la metodología Box-Jenkins, se debe determinar un modelo ARMA adecuado y escribir su expresión matemática. Para los residuos del modelo seleccionado, se debe implementar la prueba de ruido blanco de Bartlett, basada en el enfoque de Kolmogorov-Smirnov o espectral, y comparar sus resultados con el correlograma y otra prueba similar.
+
+## Metodología
+
+El análisis se desarrollará siguiendo las etapas de identificación, estimación y diagnóstico de la metodología Box-Jenkins.
+
+Primero, se explorará la serie original y se evaluará la necesidad de aplicar transformaciones o diferencias para obtener una serie estacionaria. Luego, se utilizarán las funciones de autocorrelación y autocorrelación parcial, complementadas con la autocorrelación extendida, para proponer modelos candidatos.
+
+Los modelos se compararán mediante criterios de información y el diagnóstico de sus residuos. Finalmente, se escribirá el modelo seleccionado y se contrastarán los resultados de la prueba espectral de Bartlett, el correlograma de los residuos y la prueba de Ljung-Box.
+
+## Lectura y estructura de los datos
+
+Sea $X_t$ el gasto en publicidad, en millones de dólares, correspondiente al mes $t$. La información comprende el período entre mayo de 1970 y junio de 2006, equivalente a 434 observaciones mensuales.
+
+```{r}
+# Paquete para importar los datos
+library(readxl)
+
+# Lectura del archivo
+P1 <- readxl::read_excel("P1.xlsx")
+
+# Revisar las primeras observaciones
+head(P1)
+
+# Revisar la estructura y el número de filas
+str(P1)
+nrow(P1)
+```
+
+## Exploración de la serie original
+
+Se construye una serie de tiempo mensual con inicio en mayo de 1970 y frecuencia de 12 observaciones por año. Para asignar este calendario, se supone que los datos están ordenados cronológicamente y que no faltan meses intermedios.
+
+La @fig-adver-original presenta la evolución de los gastos en publicidad durante el período de estudio y permite examinar cambios de nivel, variabilidad y posibles patrones estacionales.
+
+```{r}
+#| label: fig-adver-original
+#| fig-cap: "Gastos mensuales en publicidad, de mayo de 1970 a junio de 2006."
+#| fig-width: 8
+#| fig-height: 4.5
+
+# Construir la serie mensual
+serie_ts <- ts(
+  P1$ADVER,
+  start = c(1970, 5),
+  frequency = 12
+)
+
+# Graficar la serie original
+plot(
+  serie_ts,
+  main = "",
+  xlab = "Año",
+  ylab = "Gastos en publicidad (millones de dólares)",
+  col = "#24557A",
+  lwd = 1
+)
+```
+
+En la @fig-adver-original se observan cambios en el nivel de los gastos en publicidad durante el período analizado. En los años setenta y buena parte de los ochenta, los valores fluctúan principalmente entre 8 y 10 millones de dólares. Hacia finales de los ochenta comienza un aumento que alcanza sus niveles más altos a mediados de los noventa, seguido de una disminución y nuevas fluctuaciones.
+
+Estos cambios sugieren que la media podría no mantenerse constante en el tiempo, lo que cuestiona la estacionariedad de la serie original. Sin embargo, la inspección gráfica no es suficiente para establecer esta condición y debe complementarse con pruebas estadísticas. Tampoco se aprecia un aumento sostenido de la amplitud de las fluctuaciones asociado al nivel de la serie, por lo que este gráfico no ofrece una justificación clara para aplicar una transformación logarítmica. La posible estacionalidad deberá examinarse mediante herramientas adicionales.
+
+## Evaluación de la estacionariedad
+
+Para complementar la exploración gráfica, se aplica la prueba Dickey-Fuller aumentada (ADF) a la serie original, con un nivel de significancia del 5 %.
+
+La hipótesis nula establece que la serie presenta una raíz unitaria. La hipótesis alternativa corresponde a estacionariedad alrededor de los componentes determinísticos incluidos en la prueba.
+
+Se utiliza una especificación con constante y tendencia lineal. Si el valor-p es inferior a 0,05, se rechaza la hipótesis nula. Si es mayor o igual a 0,05, no se cuenta con evidencia suficiente para rechazarla; esto no demuestra por sí solo que la serie tenga una raíz unitaria.
+
+```{r}
+#| label: tbl-adf-original
+#| tbl-cap: "Prueba Dickey-Fuller aumentada para la serie ADVER original."
+
+library(tseries)
+
+# Regla predeterminada de adf.test para el número de rezagos
+k_adf <- trunc((length(serie_ts) - 1)^(1 / 3))
+
+# Aplicar la prueba a la serie original
+adf_original <- adf.test(
+  serie_ts,
+  alternative = "stationary",
+  k = k_adf
+)
+
+# Organizar los resultados
+tabla_adf <- data.frame(
+  Serie = "ADVER original",
+  Estadistico = unname(adf_original$statistic),
+  Rezagos = unname(adf_original$parameter),
+  Valor_p = adf_original$p.value,
+  Decision = if (adf_original$p.value < 0.05) {
+    "Se rechaza H0"
+  } else {
+    "No se rechaza H0"
+  }
+)
+
+knitr::kable(
+  tabla_adf,
+  digits = 4,
+  col.names = c(
+    "Serie", "Estadístico ADF", "Rezagos", "Valor-p", "Decisión al 5 %"
+  )
+)
+```
+
+La @tbl-adf-original muestra un estadístico ADF de −2,7316 y un valor-p de 0,2684. Al nivel de significancia del 5 %, no se rechaza la hipótesis nula de raíz unitaria. Por tanto, la prueba no proporciona evidencia suficiente para sostener estacionariedad alrededor de una tendencia lineal. Este resultado, junto con los cambios de nivel observados en la @fig-adver-original, motiva evaluar una primera diferencia.
+
+## Primera diferencia de la serie
+
+Para reducir los cambios persistentes de nivel, se considera la primera diferencia:
+
+$$
+Y_t = \Delta X_t = X_t - X_{t-1}.
+$$
+
+Esta nueva serie representa el cambio mensual de los gastos en publicidad, en millones de dólares. La @fig-adver-diferenciada muestra su evolución. Se evaluará si la diferenciación produce una serie adecuada para ajustar un modelo ARMA.
+
+```{r}
+#| label: fig-adver-diferenciada
+#| fig-cap: "Primera diferencia de los gastos mensuales en publicidad."
+#| fig-width: 8
+#| fig-height: 4.5
+
+# Diferenciar una sola vez
+serie_diff <- diff(serie_ts, lag = 1, differences = 1)
+
+plot(
+  serie_diff,
+  main = "",
+  xlab = "Año",
+  ylab = "Cambio mensual (millones de dólares)",
+  col = "#24557A",
+  lwd = 1
+)
+
+abline(h = 0, col = "gray50", lty = 2)
+```
+
+```{r}
+#| label: tbl-adf-diferenciada
+#| tbl-cap: "Prueba Dickey-Fuller aumentada para la primera diferencia de ADVER."
+#| warning: false
+
+adf_diff <- tseries::adf.test(
+  serie_diff,
+  alternative = "stationary",
+  k = trunc((length(serie_diff) - 1)^(1 / 3))
+)
+
+tabla_adf_diff <- data.frame(
+  Serie = "Primera diferencia de ADVER",
+  Estadistico = unname(adf_diff$statistic),
+  Rezagos = unname(adf_diff$parameter),
+  Valor_p = if (adf_diff$p.value <= 0.01) {
+  "< 0.01"
+} else {
+  formatC(adf_diff$p.value, format = "f", digits = 4)
+},
+  Decision = if (adf_diff$p.value < 0.05) {
+    "Se rechaza H0"
+  } else {
+    "No se rechaza H0"
+  }
+)
+
+knitr::kable(
+  tabla_adf_diff,
+  digits = 4,
+  col.names = c(
+    "Serie", "Estadístico ADF", "Rezagos", "Valor-p", "Decisión al 5 %"
+  )
+)
+```
+
+En la @fig-adver-diferenciada se observa que los cambios mensuales de los gastos en publicidad fluctúan alrededor de cero, sin una tendencia persistente visible. La amplitud de las fluctuaciones se mantiene relativamente similar durante buena parte del período, aunque existen variaciones locales y algunas observaciones extremas.
+
+La @tbl-adf-diferenciada presenta un estadístico ADF de −11,7876, con siete rezagos y un valor-p inferior a 0,01. Por tanto, al nivel de significancia del 5 %, se rechaza la hipótesis nula de raíz unitaria. Este resultado, junto con el comportamiento gráfico, respalda continuar la identificación de modelos sobre la primera diferencia, sin introducir por ahora una diferencia adicional.
+
+Se considerará un modelo ARMA para $Y_t = \Delta X_t$. En términos de la serie original $X_t$, esta especificación corresponde a un modelo ARIMA con orden de integración $d = 1$.
+
+## Identificación de modelos candidatos
+
+Para identificar posibles modelos ARMA para $Y_t = \Delta X_t$, se examinan la función de autocorrelación (FAC) y la función de autocorrelación parcial (FACP).
+
+La FAC describe la asociación entre observaciones separadas por distintos rezagos. La FACP mide esa asociación después de controlar la dependencia correspondiente a los rezagos intermedios.
+
+La @fig-fac-adver y la @fig-facp-adver presentan estas funciones hasta el rezago 36. Se presta especial atención a los primeros rezagos y a los múltiplos de 12, que pueden revelar dependencia asociada al ciclo anual.
+
+```{r}
+#| label: fig-fac-adver
+#| fig-cap: "Función de autocorrelación de la primera diferencia de ADVER."
+#| fig-width: 8
+#| fig-height: 4.5
+
+acf(
+  as.numeric(serie_diff),
+  lag.max = 36,
+  main = "",
+  xlab = "Rezago (meses)",
+  ylab = "Autocorrelación",
+  ci = 0.95,
+  col = "#24557A"
+)
+```
+
+```{r}
+#| label: fig-facp-adver
+#| fig-cap: "Función de autocorrelación parcial de la primera diferencia de ADVER."
+#| fig-width: 8
+#| fig-height: 4.5
+
+pacf(
+  as.numeric(serie_diff),
+  lag.max = 36,
+  main = "",
+  xlab = "Rezago (meses)",
+  ylab = "Autocorrelación parcial",
+  ci = 0.95,
+  col = "#24557A"
+)
+```
+
+En la @fig-fac-adver se observa un patrón oscilatorio en los primeros rezagos, con autocorrelaciones negativas pronunciadas en los rezagos 2 y 3 y positivas en los rezagos 6 y 7. La dependencia disminuye en términos generales a medida que aumenta el rezago, aunque permanecen algunos valores fuera de las bandas de referencia.
+
+La @fig-facp-adver presenta varias autocorrelaciones parciales relevantes en los primeros rezagos, sin un corte inequívoco que permita identificar un modelo autorregresivo de orden bajo. En conjunto, ambos gráficos motivan considerar modelos mixtos ARMA y complementar la identificación mediante la función de autocorrelación extendida.
+
+En la FAC también se observan valores positivos en los rezagos 12 y 24. Estas señales requieren atención durante la comparación de modelos y el diagnóstico de residuos, aunque por sí solas no establecen la necesidad de una componente estacional.
+
+### Función de autocorrelación extendida
+
+La función de autocorrelación extendida (EACF) complementa la identificación de los órdenes autorregresivo y de medias móviles. La @tbl-eacf-adver presenta sus resultados: las filas corresponden al orden autorregresivo $p$ y las columnas al orden de medias móviles $q$.
+
+Se buscan regiones aproximadamente triangulares de valores no significativos, cuyo vértice puede sugerir un modelo ARMA$(p,q)$. Esta herramienta permite proponer candidatos; la selección final dependerá de la estimación, los criterios de información y el diagnóstico de residuos.
+
+```{r}
+#| label: tbl-eacf-adver
+#| tbl-cap: "Autocorrelación extendida de la primera diferencia de ADVER."
+
+# Calcular EACF y evitar que se imprima su salida cruda
+salida_eacf <- capture.output(
+  resultado_eacf <- TSA::eacf(
+    as.numeric(serie_diff),
+    ar.max = 7,
+    ma.max = 13
+  )
+)
+
+# Construir la tabla de símbolos
+simbolos <- resultado_eacf$symbol
+
+tabla_eacf <- data.frame(
+  p = 0:(nrow(simbolos) - 1),
+  simbolos,
+  check.names = FALSE
+)
+
+names(tabla_eacf) <- c(
+  "p / q",
+  as.character(0:(ncol(simbolos) - 1))
+)
+
+knitr::kable(
+  tabla_eacf,
+  row.names = FALSE,
+  align = rep("c", ncol(tabla_eacf))
+)
+```
+
+En la @tbl-eacf-adver, el símbolo `x` representa una autocorrelación extendida significativa y el símbolo `o` una no significativa. Se identifica una región aproximadamente triangular dominada por símbolos `o`, con vértice cercano a $(p,q)=(2,3)$, aunque el patrón presenta algunas excepciones muestrales.
+
+Este resultado motiva considerar un modelo ARMA(2,3). Para evaluar si una especificación más sencilla resulta suficiente, también se ajustarán los modelos ARMA(2,1) y ARMA(2,2). Adicionalmente, se incluirá ARMA(3,3) como una alternativa cercana. La selección dependerá de los criterios de información, la validez del ajuste y el diagnóstico de los residuos.
+
+```{r}
+#| label: tbl-comparacion-arma
+#| tbl-cap: "Comparación de modelos ARMA para la primera diferencia de ADVER."
+
+# Órdenes candidatos: c(p, d, q)
+ordenes <- list(
+  "ARMA(2,1)" = c(2, 0, 1),
+  "ARMA(2,2)" = c(2, 0, 2),
+  "ARMA(2,3)" = c(2, 0, 3),
+  "ARMA(3,3)" = c(3, 0, 3)
+)
+
+# Conservar cada ajuste en una lista
+modelos <- lapply(
+  ordenes,
+  function(orden) {
+    forecast::Arima(
+      serie_diff,
+      order = orden,
+      seasonal = c(0, 0, 0),
+      include.mean = TRUE,
+      method = "ML"
+    )
+  }
+)
+
+# Construir la tabla comparativa
+comparacion <- do.call(
+  rbind,
+  lapply(names(modelos), function(nombre) {
+    ajuste <- modelos[[nombre]]
+
+    data.frame(
+      Modelo = nombre,
+      AIC = ajuste$aic,
+      AICc = ajuste$aicc,
+      BIC = ajuste$bic,
+      Convergencia = if (ajuste$code == 0) {
+        "Sí"
+      } else {
+        "Revisar"
+      }
+    )
+  })
+)
+
+# Ordenar por AICc
+comparacion <- comparacion[
+  order(comparacion$AICc),
+]
+
+knitr::kable(
+  comparacion,
+  digits = 3,
+  row.names = FALSE
+)
+```
+
+La @tbl-comparacion-arma muestra que ARMA(2,1) obtiene los menores valores de AIC, AICc y BIC entre las especificaciones comparadas. Este modelo ofrece inicialmente la mejor relación entre ajuste y complejidad.
+
+No obstante, las diferencias de AICc respecto a ARMA(2,2) y ARMA(2,3) son pequeñas: aproximadamente 0,630 y 1,621, respectivamente. Por tanto, la selección se complementará con la verificación de causalidad e invertibilidad y el diagnóstico de autocorrelación residual. La convergencia numérica de los ajustes no garantiza, por sí sola, que sus residuos sean compatibles con ruido blanco.
+
+## Diagnóstico de los modelos candidatos
+
+Se verifica que las raíces de los polinomios autorregresivo y de medias móviles estén fuera del círculo unitario, condiciones correspondientes a causalidad e invertibilidad, respectivamente.
+
+Además, se aplica la prueba de Ljung-Box a los residuos en los rezagos 12, 24 y 36. Su hipótesis nula establece que las autocorrelaciones residuales hasta el rezago considerado son conjuntamente iguales a cero. Se utiliza un nivel de significancia del 5 % y se ajustan los grados de libertad por los parámetros autorregresivos y de medias móviles estimados.
+
+```{r}
+#| label: tbl-diagnostico-candidatos
+#| tbl-cap: "Raíces y pruebas de Ljung-Box para los modelos candidatos."
+
+diagnostico <- do.call(
+  rbind,
+  lapply(names(modelos), function(nombre) {
+
+    ajuste <- modelos[[nombre]]
+    coeficientes <- coef(ajuste)
+
+    # Identificar los coeficientes por sus nombres
+    ar <- coeficientes[grepl("^ar[0-9]+$", names(coeficientes))]
+    ma <- coeficientes[grepl("^ma[0-9]+$", names(coeficientes))]
+
+    # Polinomios: 1 - phi_1 B - ... y 1 + theta_1 B + ...
+    raices_ar <- polyroot(c(1, -ar))
+    raices_ma <- polyroot(c(1, ma))
+
+    minimo_ar <- min(Mod(raices_ar))
+    minimo_ma <- min(Mod(raices_ma))
+
+    residuos <- as.numeric(residuals(ajuste))
+    fitdf <- length(ar) + length(ma)
+
+    valores_p <- vapply(
+      c(12, 24, 36),
+      function(h) {
+        Box.test(
+          residuos,
+          lag = h,
+          type = "Ljung-Box",
+          fitdf = fitdf
+        )$p.value
+      },
+      numeric(1)
+    )
+
+    data.frame(
+      Modelo = nombre,
+      Raiz_AR_min = minimo_ar,
+      Raiz_MA_min = minimo_ma,
+      LB_12 = valores_p[1],
+      LB_24 = valores_p[2],
+      LB_36 = valores_p[3]
+    )
+  })
+)
+
+knitr::kable(
+  diagnostico,
+  digits = 4,
+  row.names = FALSE,
+  col.names = c(
+    "Modelo",
+    "Mín. módulo AR",
+    "Mín. módulo MA",
+    "Valor-p LB(12)",
+    "Valor-p LB(24)",
+    "Valor-p LB(36)"
+  )
+)
+```
+
+La @tbl-diagnostico-candidatos muestra que todos los modelos presentan raíces autorregresivas y de medias móviles con módulos superiores a uno, por lo que cumplen las condiciones de causalidad e invertibilidad.
+
+Asimismo, los valores-p de la prueba de Ljung-Box son superiores a 0,05 en los rezagos 12, 24 y 36 para las cuatro especificaciones. Por tanto, no se rechaza la hipótesis de ausencia conjunta de autocorrelación residual hasta los rezagos evaluados.
+
+Considerando estos resultados y los criterios de información de la @tbl-comparacion-arma, se selecciona ARMA(2,1) para la primera diferencia de ADVER. Este modelo presenta los menores AIC, AICc y BIC y es el más parsimonioso entre los candidatos comparados. Sobre la serie original, corresponde a un ARIMA(2,1,1). Su diagnóstico se complementará con el correlograma residual y la prueba espectral de Bartlett.
+
+```{r}
+#| label: tbl-coeficientes-seleccionado
+#| tbl-cap: "Parámetros estimados del modelo ARMA(2,1)."
+
+# Recuperar el ajuste seleccionado sin volver a estimarlo
+modelo_seleccionado <- modelos[["ARMA(2,1)"]]
+
+estimaciones <- coef(modelo_seleccionado)
+errores_estandar <- sqrt(diag(modelo_seleccionado$var.coef))
+
+tabla_coeficientes <- data.frame(
+  Parametro = c(
+    "AR(1): phi_1",
+    "AR(2): phi_2",
+    "MA(1): theta_1",
+    "Media de Y_t: mu"
+  ),
+  Estimacion = unname(
+    estimaciones[c("ar1", "ar2", "ma1", "intercept")]
+  ),
+  Error_estandar = unname(
+    errores_estandar[c("ar1", "ar2", "ma1", "intercept")]
+  )
+)
+
+knitr::kable(
+  tabla_coeficientes,
+  digits = 5,
+  row.names = FALSE,
+  col.names = c("Parámetro", "Estimación", "Error estándar")
+)
+```
+
+La @tbl-coeficientes-seleccionado presenta las estimaciones del modelo ARMA(2,1) para $Y_t = \Delta X_t$. Su expresión, centrada en la media estimada, es:
+
+$$
+Y_t-0{,}00179
+=
+0{,}84218(Y_{t-1}-0{,}00179)
+-0{,}58652(Y_{t-2}-0{,}00179)
++\varepsilon_t
+-0{,}81001\varepsilon_{t-1}.
+$$ {#eq-arma-adver}
+
+Equivalentemente, al desarrollar los términos de la @eq-arma-adver:
+
+$$
+Y_t
+=
+0{,}00133
++0{,}84218Y_{t-1}
+-0{,}58652Y_{t-2}
++\varepsilon_t
+-0{,}81001\varepsilon_{t-1}.
+$$
+
+Aquí, $Y_t=X_t-X_{t-1}$ representa el cambio mensual del gasto en publicidad, y $\varepsilon_t$ representa la innovación del modelo, con media cero, varianza constante y ausencia de autocorrelación bajo los supuestos de la especificación.
+
+Si $B$ denota el operador de rezago, definido por $BX_t=X_{t-1}$, el modelo sobre la serie original se escribe como:
+
+$$
+(1-0{,}84218B+0{,}58652B^2)(1-B)X_t
+=
+0{,}00133+(1-0{,}81001B)\varepsilon_t.
+$$
+
+Por tanto, la especificación corresponde a un ARMA(2,1) para la primera diferencia y a un ARIMA(2,1,1) para los gastos originales. Los coeficientes mostrados están redondeados.
+
+## Diagnóstico gráfico del modelo seleccionado
+
+La @fig-residuos-adver permite examinar el comportamiento temporal de los residuos del modelo seleccionado. La @fig-fac-residuos-adver muestra sus autocorrelaciones hasta el rezago 36 y complementa los resultados de la prueba de Ljung-Box.
+
+```{r}
+#| label: fig-residuos-adver
+#| fig-cap: "Residuos del modelo ARMA(2,1) para la primera diferencia de ADVER."
+#| fig-width: 8
+#| fig-height: 4.5
+
+residuos_seleccionado <- residuals(modelo_seleccionado)
+
+plot(
+  residuos_seleccionado,
+  main = "",
+  xlab = "Año",
+  ylab = "Residuo (millones de dólares)",
+  col = "#24557A",
+  lwd = 1
+)
+
+abline(h = 0, col = "gray50", lty = 2)
+```
+
+```{r}
+#| label: fig-fac-residuos-adver
+#| fig-cap: "Autocorrelación de los residuos del modelo ARMA(2,1)."
+#| fig-width: 8
+#| fig-height: 4.5
+
+acf(
+  as.numeric(residuos_seleccionado),
+  lag.max = 36,
+  main = "",
+  xlab = "Rezago (meses)",
+  ylab = "Autocorrelación",
+  ci = 0.95,
+  col = "#24557A"
+)
+```
+
+En la @fig-residuos-adver, los residuos fluctúan alrededor de cero sin mostrar una tendencia persistente. Aunque se observan algunos valores extremos, no se aprecia un cambio sostenido de su amplitud durante el período analizado.
+
+En la @fig-fac-residuos-adver, las autocorrelaciones de rezagos positivos se encuentran mayoritariamente dentro de las bandas de referencia del 95 %, con una pequeña excedencia alrededor del rezago 30. No se identifica un patrón persistente de dependencia residual. La barra del rezago cero, igual a uno por definición, no interviene en este diagnóstico.
+
+Estos resultados son coherentes con la prueba de Ljung-Box, cuyos valores-p para el modelo seleccionado fueron 0,5804, 0,7187 y 0,3628 en los rezagos 12, 24 y 36, respectivamente. En ninguno de estos casos se rechaza la hipótesis de ausencia conjunta de autocorrelación residual al nivel del 5 %.
+
+## Prueba espectral de Bartlett
+
+La prueba de Bartlett, de tipo Kolmogorov-Smirnov, evalúa la compatibilidad de los residuos con ruido blanco mediante el periodograma acumulado normalizado.
+
+Bajo la hipótesis nula de ruido blanco, el espectro es constante y el periodograma acumulado normalizado debe aproximarse a una línea recta. La prueba evalúa las desviaciones respecto a ese comportamiento. La hipótesis alternativa corresponde a una estructura espectral incompatible con ruido blanco.
+
+Se utiliza un nivel de significancia del 5 %. La @tbl-bartlett-adver presenta el estadístico y el valor-p obtenidos para los residuos del modelo ARMA(2,1).
+
+```{r}
+#| label: tbl-bartlett-adver
+#| tbl-cap: "Prueba espectral de Bartlett para los residuos del modelo ARMA(2,1)."
+
+bartlett_resultado <- hwwntest::bartlettB.test(
+  as.numeric(residuos_seleccionado),
+  plot.it = FALSE
+)
+
+tabla_bartlett <- data.frame(
+  Prueba = "Bartlett espectral",
+  Estadistico = unname(bartlett_resultado$statistic),
+  Valor_p = bartlett_resultado$p.value,
+  Decision = if (bartlett_resultado$p.value < 0.05) {
+    "Se rechaza H0"
+  } else {
+    "No se rechaza H0"
+  }
+)
+
+knitr::kable(
+  tabla_bartlett,
+  digits = 4,
+  row.names = FALSE,
+  col.names = c(
+    "Prueba", "Estadístico", "Valor-p", "Decisión al 5 %"
+  )
+)
+```
+
+## Comparación de los diagnósticos y conclusión
+
+La @tbl-bartlett-adver presenta un estadístico de Bartlett de 0,6159 y un valor-p de 0,8425. Al nivel de significancia del 5 %, no se rechaza la hipótesis nula de ruido blanco. Por tanto, la prueba espectral no detecta desviaciones significativas respecto al comportamiento esperado de un espectro constante.
+
+Este resultado es coherente con la @fig-fac-residuos-adver, donde las autocorrelaciones residuales se encuentran mayoritariamente dentro de las bandas de referencia, sin un patrón persistente. La pequeña excedencia alrededor del rezago 30 no constituye, por sí sola, evidencia suficiente para descartar el modelo.
+
+Asimismo, la prueba de Ljung-Box no rechaza la ausencia conjunta de autocorrelación residual en los rezagos 12, 24 y 36, con valores-p de 0,5804, 0,7187 y 0,3628, respectivamente. Mientras el correlograma permite examinar autocorrelaciones individuales, Ljung-Box las evalúa conjuntamente hasta un rezago determinado y Bartlett analiza la estructura de dependencia desde el dominio de las frecuencias.
+
+En conjunto, los diagnósticos respaldan la compatibilidad de los residuos con ruido blanco, sin demostrarla de manera definitiva. Se considera adecuado el modelo ARMA(2,1) seleccionado para la primera diferencia de ADVER, equivalente a un ARIMA(2,1,1) sobre la serie original. Entre los candidatos comparados, este modelo obtuvo los menores AIC, AICc y BIC y cumplió las condiciones de causalidad e invertibilidad.
+
+# Punto 2: Modelación y pronóstico de la tasa de desempleo
+
+## Enunciado
+
+El archivo `P2.xls` contiene la serie trimestral de la tasa de desempleo nacional urbano en Colombia, desde marzo de 1977 hasta septiembre de 2006. Se requiere ajustar un modelo al logaritmo natural de esta serie y desarrollar los siguientes incisos:
+
+a)  Determinar si el proceso es estacionario en diferencias o alrededor de una tendencia lineal.
+
+b)  Construir el modelo ARIMA o ARMA correspondiente y escribir el modelo estimado seleccionado.
+
+c)  Realizar pronósticos hasta un horizonte de un año, dentro de muestra, calcular el RMSE de pronóstico y evaluar su desempeño.
+
+## Lectura y estructura de los datos
+
+Sea $U_t$ la tasa de desempleo correspondiente al trimestre $t$. La variable que se modelará será su logaritmo natural:
+
+$$
+Z_t = \log(U_t).
+$$
+
+El período indicado comprende desde el primer trimestre de 1977 hasta el tercer trimestre de 2006, equivalente a 119 observaciones trimestrales.
+
+Antes de construir la serie, se revisan los nombres de las columnas, sus tipos y el número de observaciones. También se debe comprobar que los registros estén ordenados cronológicamente y que no falten trimestres.
+
+```{r}
+#| label: lectura-p2
+
+# Leer el archivo
+P2 <- readxl::read_excel("P2.xls")
+
+# Examinar las primeras observaciones
+head(P2)
+
+# Revisar nombres y tipos de columnas
+names(P2)
+str(P2)
+
+# Comprobar el número de filas
+nrow(P2)
+```
+
+## Exploración de la serie original y su logaritmo
+
+La tasa de desempleo se expresa en porcentaje y se registra trimestralmente. Se construye la serie con inicio en el primer trimestre de 1977 y frecuencia de cuatro observaciones por año.
+
+La @fig-desempleo-original presenta la serie en su escala original. La @fig-desempleo-log presenta su logaritmo natural, que será la variable utilizada para la identificación y estimación del modelo, conforme al enunciado.
+
+```{r}
+#| label: preparar-desempleo
+
+# Ordenar los registros por fecha
+P2 <- P2[order(P2$FECHA), ]
+
+fechas_desempleo <- as.Date(P2$FECHA)
+tasas_desempleo <- P2[["DESEMP(%)"]]
+
+# Verificar que estén todos los trimestres del período
+fechas_esperadas <- seq(
+  as.Date("1977-03-01"),
+  as.Date("2006-09-01"),
+  by = "3 months"
+)
+
+if (!identical(fechas_desempleo, fechas_esperadas)) {
+  stop("Las fechas no coinciden con el calendario trimestral esperado.")
+}
+
+# El logaritmo requiere valores positivos y finitos
+if (any(!is.finite(tasas_desempleo)) || any(tasas_desempleo <= 0)) {
+  stop("La tasa debe contener únicamente valores positivos y finitos.")
+}
+
+# Construir la serie trimestral
+serie_desempleo <- ts(
+  tasas_desempleo,
+  start = c(1977, 1),
+  frequency = 4
+)
+
+# Transformación solicitada
+log_desempleo <- log(serie_desempleo)
+```
+
+```{r}
+#| label: fig-desempleo-original
+#| fig-cap: "Tasa trimestral de desempleo nacional urbano en Colombia, de marzo de 1977 a septiembre de 2006."
+#| fig-width: 8
+#| fig-height: 4.5
+
+plot(
+  serie_desempleo,
+  main = "",
+  xlab = "Año",
+  ylab = "Tasa de desempleo (%)",
+  col = "#24557A",
+  lwd = 1
+)
+```
+
+```{r}
+#| label: fig-desempleo-log
+#| fig-cap: "Logaritmo natural de la tasa trimestral de desempleo."
+#| fig-width: 8
+#| fig-height: 4.5
+
+plot(
+  log_desempleo,
+  main = "",
+  xlab = "Año",
+  ylab = "Logaritmo natural de la tasa",
+  col = "#24557A",
+  lwd = 1
+)
+```
+
+En la @fig-desempleo-original se observan fluctuaciones prolongadas de la tasa de desempleo. Después de un aumento durante la primera mitad de los años ochenta, la tasa disminuye hasta mediados de los noventa. Posteriormente, presenta un incremento pronunciado, alcanza valores cercanos al 20 % alrededor de 2001 y vuelve a disminuir hacia el final del período.
+
+La @fig-desempleo-log conserva estos movimientos, aunque comprime la escala de los valores más altos. La transformación logarítmica no elimina los cambios persistentes de nivel ni produce, por sí sola, estacionariedad. Tampoco se aprecia una trayectoria que pueda describirse claramente mediante una única tendencia lineal.
+
+Por tanto, se utilizarán pruebas estadísticas para evaluar si el logaritmo de la serie es estacionario alrededor de una tendencia lineal o si requiere diferenciación.
+
+## Separación de la muestra para evaluar los pronósticos
+
+Se reservan las últimas cuatro observaciones para evaluar pronósticos con horizontes de uno a cuatro trimestres, emitidos desde un mismo origen.
+
+La muestra de estimación comprende desde el primer trimestre de 1977 hasta el tercer trimestre de 2005. El período de evaluación comprende desde el cuarto trimestre de 2005 hasta el tercer trimestre de 2006.
+
+Las observaciones reservadas pertenecen al período histórico disponible, pero no se utilizarán en las pruebas de identificación ni en la estimación del modelo. Este procedimiento permite evaluar pronósticos retrospectivos fuera de la muestra de estimación.
+
+```{r}
+#| label: tbl-particion-desempleo
+#| tbl-cap: "Separación de la serie de desempleo para estimación y evaluación."
+
+# Serie original
+desempleo_entrenamiento <- window(
+  serie_desempleo,
+  end = c(2005, 3)
+)
+
+desempleo_evaluacion <- window(
+  serie_desempleo,
+  start = c(2005, 4)
+)
+
+# Serie logarítmica que utilizaremos para modelar
+log_desempleo_entrenamiento <- log(desempleo_entrenamiento)
+log_desempleo_evaluacion <- log(desempleo_evaluacion)
+
+# Comprobar los tamaños
+stopifnot(
+  length(desempleo_entrenamiento) == 115,
+  length(desempleo_evaluacion) == 4
+)
+
+tabla_particion <- data.frame(
+  Muestra = c("Estimación", "Evaluación"),
+  Inicio = c("1977-T1", "2005-T4"),
+  Fin = c("2005-T3", "2006-T3"),
+  Observaciones = c(
+    length(desempleo_entrenamiento),
+    length(desempleo_evaluacion)
+  )
+)
+
+knitr::kable(
+  tabla_particion,
+  row.names = FALSE,
+  col.names = c("Muestra", "Inicio", "Fin", "Observaciones")
+)
+```
+
+La @tbl-particion-desempleo resume la separación utilizada. El análisis de estacionariedad y la selección del modelo se realizarán exclusivamente sobre las 115 observaciones de estimación.
+
+## a) Estacionariedad en diferencias o alrededor de tendencia
+
+Se evalúa el logaritmo de la tasa de desempleo utilizando exclusivamente la muestra de estimación. Para examinar la posibilidad de estacionariedad alrededor de una tendencia lineal, se aplican las pruebas ADF y KPSS, con un nivel de significancia del 5 %.
+
+La prueba ADF incluye constante y tendencia lineal. Su hipótesis nula establece la presencia de una raíz unitaria, frente a la alternativa de estacionariedad alrededor de los componentes determinísticos incluidos.
+
+La prueba KPSS utiliza como hipótesis nula la estacionariedad alrededor de una tendencia lineal. Por tanto, ambas pruebas aportan evidencia complementaria y deben interpretarse conjuntamente.
+
+La @tbl-estacionariedad-desempleo-log presenta sus resultados. Las decisiones corresponden a la hipótesis nula propia de cada prueba.
+
+```{r}
+#| label: tbl-estacionariedad-desempleo-log
+#| tbl-cap: "Pruebas ADF y KPSS para el logaritmo de la tasa de desempleo en la muestra de estimación."
+#| warning: false
+
+# ADF: constante y tendencia
+adf_desempleo_log <- tseries::adf.test(
+  log_desempleo_entrenamiento,
+  alternative = "stationary",
+  k = trunc(
+    (length(log_desempleo_entrenamiento) - 1)^(1 / 3)
+  )
+)
+
+# KPSS: estacionariedad alrededor de tendencia lineal
+kpss_desempleo_log <- tseries::kpss.test(
+  log_desempleo_entrenamiento,
+  null = "Trend",
+  lshort = TRUE
+)
+
+# Organizar los resultados con valores-p numéricos
+tabla_estacionariedad <- data.frame(
+  Prueba = c("ADF con tendencia", "KPSS de tendencia"),
+  H0 = c(
+    "Raíz unitaria",
+    "Estacionariedad alrededor de tendencia"
+  ),
+  Estadistico = c(
+    unname(adf_desempleo_log$statistic),
+    unname(kpss_desempleo_log$statistic)
+  ),
+  Parametro_rezagos = c(
+    unname(adf_desempleo_log$parameter),
+    unname(kpss_desempleo_log$parameter)
+  ),
+  Valor_p = c(
+    adf_desempleo_log$p.value,
+    kpss_desempleo_log$p.value
+  )
+)
+
+# Calcular las decisiones antes de convertir los valores-p a texto
+tabla_estacionariedad$Decision <- ifelse(
+  tabla_estacionariedad$Valor_p < 0.05,
+  "Se rechaza H0",
+  "No se rechaza H0"
+)
+
+# Formatear los valores-p para su presentación
+# KPSS se reporta como desigualdad por la advertencia observada
+tabla_estacionariedad$Valor_p <- c(
+  formatC(
+    adf_desempleo_log$p.value,
+    format = "f",
+    digits = 4
+  ),
+  "< 0.01"
+)
+
+# Presentar la tabla
+knitr::kable(
+  tabla_estacionariedad,
+  digits = 4,
+  row.names = FALSE,
+  col.names = c(
+    "Prueba",
+    "Hipótesis nula",
+    "Estadístico",
+    "Parámetro de rezagos",
+    "Valor-p",
+    "Decisión al 5 %"
+  )
+)
+```
+
+La @tbl-estacionariedad-desempleo-log muestra que la prueba ADF obtiene un estadístico de −2,1715 y un valor-p de 0,5054, por lo que no se rechaza la hipótesis de raíz unitaria al 5 %. Por su parte, KPSS presenta un estadístico de 0,2285 y un valor-p inferior a 0,01, rechazando la hipótesis de estacionariedad alrededor de una tendencia lineal.
+
+Bajo las especificaciones utilizadas, ambos resultados cuestionan la representación del logaritmo de la tasa de desempleo como una serie estacionaria alrededor de una tendencia lineal. Por tanto, se evaluará su primera diferencia. Estos resultados no establecen todavía el orden de integración.
+
+### Evaluación de la primera diferencia
+
+Se define la primera diferencia del logaritmo como:
+
+$$
+W_t=\Delta Z_t=Z_t-Z_{t-1}
+=\log\left(\frac{U_t}{U_{t-1}}\right).
+$$
+
+Esta variable representa el cambio logarítmico trimestral de la tasa de desempleo. Se examina su comportamiento gráfico y se aplican pruebas ADF y KPSS. Para KPSS se utiliza ahora la hipótesis de estacionariedad alrededor de un nivel constante.
+
+```{r}
+#| label: fig-desempleo-log-diff
+#| fig-cap: "Primera diferencia del logaritmo de la tasa de desempleo en la muestra de estimación."
+#| fig-width: 8
+#| fig-height: 4.5
+
+diff_log_desempleo <- diff(
+  log_desempleo_entrenamiento,
+  lag = 1,
+  differences = 1
+)
+
+plot(
+  diff_log_desempleo,
+  main = "",
+  xlab = "Año",
+  ylab = "Cambio logarítmico trimestral",
+  col = "#24557A",
+  lwd = 1
+)
+
+abline(h = 0, col = "gray50", lty = 2)
+```
+
+```{r}
+#| label: tbl-estacionariedad-desempleo-diff
+#| tbl-cap: "Pruebas de raíz unitaria y estacionariedad para la primera diferencia del logaritmo."
+#| warning: false
+
+adf_desempleo_diff <- tseries::adf.test(
+  diff_log_desempleo,
+  alternative = "stationary",
+  k = trunc((length(diff_log_desempleo) - 1)^(1 / 3))
+)
+
+kpss_desempleo_diff <- tseries::kpss.test(
+  diff_log_desempleo,
+  null = "Level",
+  lshort = TRUE
+)
+
+tabla_estacionariedad_diff <- data.frame(
+  Prueba = c("ADF con tendencia", "KPSS de nivel"),
+  H0 = c(
+    "Raíz unitaria",
+    "Estacionariedad alrededor de un nivel"
+  ),
+  Estadistico = c(
+    unname(adf_desempleo_diff$statistic),
+    unname(kpss_desempleo_diff$statistic)
+  ),
+  Parametro_rezagos = c(
+    unname(adf_desempleo_diff$parameter),
+    unname(kpss_desempleo_diff$parameter)
+  ),
+  Valor_p = c(
+    adf_desempleo_diff$p.value,
+    kpss_desempleo_diff$p.value
+  )
+)
+
+# Primero: decisiones con valores-p numéricos
+tabla_estacionariedad_diff$Decision <- ifelse(
+  tabla_estacionariedad_diff$Valor_p < 0.05,
+  "Se rechaza H0",
+  "No se rechaza H0"
+)
+
+# Después: formato para la presentación
+tabla_estacionariedad_diff$Valor_p <- c(
+  formatC(adf_desempleo_diff$p.value, format = "f", digits = 4),
+  "> 0.10"
+)
+
+knitr::kable(
+  tabla_estacionariedad_diff,
+  digits = 4,
+  row.names = FALSE,
+  col.names = c(
+    "Prueba", "Hipótesis nula", "Estadístico",
+    "Parámetro de rezagos", "Valor-p", "Decisión al 5 %"
+  )
+)
+```
+
+La @tbl-estacionariedad-desempleo-diff muestra un estadístico ADF de −3,4023 y un valor-p de 0,0577. Al nivel del 5 %, no se rechaza la hipótesis de raíz unitaria, aunque el resultado está próximo al umbral de significancia.
+
+Por su parte, KPSS obtiene un estadístico de 0,0761 y un valor-p superior a 0,10, por lo que no se rechaza la estacionariedad alrededor de un nivel constante. La evidencia conjunta no es concluyente bajo estas especificaciones. Antes de introducir otra diferencia, se revisará la especificación determinística y la selección de rezagos del ADF.
+
+### Revisión de la especificación del ADF
+
+Se complementa el análisis con una prueba ADF que incluye constante y excluye la tendencia lineal. Esta especificación evalúa la posibilidad de que la primera diferencia sea estacionaria alrededor de un nivel constante.
+
+El número de rezagos adicionales se selecciona mediante BIC, considerando un máximo de ocho trimestres. La @tbl-adf-desempleo-diff-bic presenta el estadístico de raíz unitaria y sus valores críticos. La hipótesis nula se rechaza cuando el estadístico es más negativo que el valor crítico correspondiente.
+
+```{r}
+#| label: tbl-adf-desempleo-diff-bic
+#| tbl-cap: "ADF con constante para la primera diferencia del logaritmo, con selección de rezagos por BIC."
+
+adf_diff_bic <- urca::ur.df(
+  as.numeric(diff_log_desempleo),
+  type = "drift",
+  lags = 8,
+  selectlags = "BIC"
+)
+
+# Estadístico de raíz unitaria para la especificación con constante
+estadistico_adf <- unname(adf_diff_bic@teststat[1, "tau2"])
+
+# Valores críticos propios de esta especificación
+criticos_adf <- adf_diff_bic@cval["tau2", ]
+
+# Contar los términos de diferencias rezagadas del ajuste final
+rezagos_elegidos <- sum(
+  grepl(
+    "z.diff.lag",
+    rownames(adf_diff_bic@testreg$coefficients),
+    fixed = TRUE
+  )
+)
+
+tabla_adf_bic <- data.frame(
+  Especificacion = "Constante, sin tendencia",
+  Rezagos_BIC = rezagos_elegidos,
+  Estadistico = estadistico_adf,
+  Critico_1 = unname(criticos_adf["1pct"]),
+  Critico_5 = unname(criticos_adf["5pct"]),
+  Critico_10 = unname(criticos_adf["10pct"]),
+  Decision = if (estadistico_adf < criticos_adf["5pct"]) {
+    "Se rechaza H0"
+  } else {
+    "No se rechaza H0"
+  }
+)
+
+knitr::kable(
+  tabla_adf_bic,
+  digits = 4,
+  row.names = FALSE,
+  col.names = c(
+    "Especificación", "Rezagos BIC", "Estadístico",
+    "Crítico al 1 %", "Crítico al 5 %", "Crítico al 10 %",
+    "Decisión al 5 %"
+  )
+)
+```
+
+La @tbl-adf-desempleo-diff-bic muestra que BIC selecciona tres rezagos adicionales para el ADF con constante y sin tendencia. El estadístico obtenido, −4,0737, es más negativo que los valores críticos del 1 %, 5 % y 10 %, por lo que se rechaza la hipótesis de raíz unitaria en esta especificación.
+
+Este resultado complementa la prueba KPSS de nivel, que no rechaza estacionariedad de la primera diferencia. La diferencia respecto al ADF anterior refleja la sensibilidad a la inclusión de tendencia y a la selección de rezagos. Se verificará la autocorrelación de los residuos de la regresión ADF antes de cerrar la decisión sobre el orden de integración.
+
+```{r}
+#| label: tbl-residuos-adf-desempleo
+#| tbl-cap: "Diagnóstico de autocorrelación de los residuos de la regresión ADF seleccionada por BIC."
+
+residuos_adf <- as.numeric(adf_diff_bic@res)
+
+# Con k diferencias rezagadas, la regresión equivale a un AR(k+1)
+orden_ar_adf <- rezagos_elegidos + 1
+
+tabla_residuos_adf <- do.call(
+  rbind,
+  lapply(c(12, 16), function(h) {
+
+    prueba <- stats::Box.test(
+      residuos_adf,
+      lag = h,
+      type = "Ljung-Box",
+      fitdf = orden_ar_adf
+    )
+
+    data.frame(
+      Rezago = h,
+      Estadistico = unname(prueba$statistic),
+      Grados_libertad = unname(prueba$parameter),
+      Valor_p = prueba$p.value,
+      Decision = if (prueba$p.value < 0.05) {
+        "Se rechaza H0"
+      } else {
+        "No se rechaza H0"
+      }
+    )
+  })
+)
+
+knitr::kable(
+  tabla_residuos_adf,
+  digits = 4,
+  row.names = FALSE,
+  col.names = c(
+    "Rezago", "Estadístico", "Grados de libertad",
+    "Valor-p", "Decisión al 5 %"
+  )
+)
+```
+
+La prueba de Ljung–Box detecta autocorrelación en los residuos de la regresión ADF seleccionada por BIC, tanto a 12 como a 16 rezagos. En consecuencia, el rechazo de la hipótesis de raíz unitaria debe interpretarse con cautela. Se revisará la selección de rezagos antes de establecer una conclusión sobre la estacionariedad de la primera diferencia.
+
+```{r}
+#| label: tbl-adf-desempleo-diff-aic
+#| tbl-cap: "ADF con constante para la primera diferencia del logaritmo, con selección de rezagos por AIC."
+
+adf_diff_aic <- urca::ur.df(
+  as.numeric(diff_log_desempleo),
+  type = "drift",
+  lags = 8,
+  selectlags = "AIC"
+)
+
+estadistico_adf_aic <- unname(
+  adf_diff_aic@teststat[1, "tau2"]
+)
+
+criticos_adf_aic <- adf_diff_aic@cval["tau2", ]
+
+rezagos_aic <- sum(
+  grepl(
+    "z.diff.lag",
+    rownames(adf_diff_aic@testreg$coefficients),
+    fixed = TRUE
+  )
+)
+
+tabla_adf_aic <- data.frame(
+  Especificacion = "Constante, sin tendencia",
+  Rezagos_AIC = rezagos_aic,
+  Estadistico = estadistico_adf_aic,
+  Critico_1 = unname(criticos_adf_aic["1pct"]),
+  Critico_5 = unname(criticos_adf_aic["5pct"]),
+  Critico_10 = unname(criticos_adf_aic["10pct"]),
+  Decision = if (
+    estadistico_adf_aic < criticos_adf_aic["5pct"]
+  ) {
+    "Se rechaza H0"
+  } else {
+    "No se rechaza H0"
+  }
+)
+
+knitr::kable(
+  tabla_adf_aic,
+  digits = 4,
+  row.names = FALSE,
+  col.names = c(
+    "Especificación",
+    "Rezagos AIC",
+    "Estadístico",
+    "Crítico al 1 %",
+    "Crítico al 5 %",
+    "Crítico al 10 %",
+    "Decisión al 5 %"
+  )
+)
+```
+
+```{r}
+#| label: tbl-residuos-adf-desempleo-aic
+#| tbl-cap: "Diagnóstico de autocorrelación de los residuos de la regresión ADF seleccionada por AIC."
+
+residuos_adf_aic <- as.numeric(adf_diff_aic@res)
+
+# Orden autorregresivo equivalente de la regresión ADF
+orden_ar_adf_aic <- rezagos_aic + 1
+
+tabla_residuos_adf_aic <- do.call(
+  rbind,
+  lapply(c(12, 16), function(h) {
+
+    prueba <- stats::Box.test(
+      residuos_adf_aic,
+      lag = h,
+      type = "Ljung-Box",
+      fitdf = orden_ar_adf_aic
+    )
+
+    data.frame(
+      Rezago = h,
+      Estadistico = unname(prueba$statistic),
+      Grados_libertad = unname(prueba$parameter),
+      Valor_p = prueba$p.value,
+      Decision = if (prueba$p.value < 0.05) {
+        "Se rechaza H0"
+      } else {
+        "No se rechaza H0"
+      }
+    )
+  })
+)
+
+knitr::kable(
+  tabla_residuos_adf_aic,
+  digits = 4,
+  row.names = FALSE,
+  col.names = c(
+    "Rezago",
+    "Estadístico",
+    "Grados de libertad",
+    "Valor-p",
+    "Decisión al 5 %"
+  )
+)
+```
+
+La prueba ADF con selección de rezagos por AIC no rechaza la hipótesis de raíz unitaria al 5 %, aunque sí al 10 %. Además, el diagnóstico de Ljung–Box presenta resultados distintos según el horizonte considerado. Se complementa la revisión de los residuos con la prueba de Breusch–Godfrey antes de establecer la conclusión sobre el orden de integración.
+
+```{r}
+#| label: tbl-bg-adf-desempleo-aic
+#| tbl-cap: "Prueba de Breusch–Godfrey para la regresión ADF seleccionada por AIC."
+
+# Serie evaluada por el ADF: primera diferencia del logaritmo
+w_adf <- as.numeric(diff_log_desempleo)
+
+# Mantener la muestra común del ADF, cuyo máximo fue ocho rezagos
+max_rezagos_adf <- 8L
+matriz_adf <- embed(diff(w_adf), max_rezagos_adf + 1L)
+
+datos_regresion_adf <- data.frame(
+  respuesta = matriz_adf[, 1],
+  nivel_rezagado = w_adf[
+    (max_rezagos_adf + 1L):(length(w_adf) - 1L)
+  ]
+)
+
+# Incorporar los rezagos seleccionados por AIC
+for (j in seq_len(rezagos_aic)) {
+  datos_regresion_adf[[paste0("dif_rezagada_", j)]] <-
+    matriz_adf[, j + 1L]
+}
+
+regresion_adf_aic <- stats::lm(
+  respuesta ~ .,
+  data = datos_regresion_adf
+)
+
+# Verificar que se reproduzca la regresión de ur.df()
+stopifnot(
+  isTRUE(
+    all.equal(
+      as.numeric(stats::residuals(regresion_adf_aic)),
+      as.numeric(adf_diff_aic@res),
+      tolerance = 1e-8
+    )
+  )
+)
+
+tabla_bg_adf <- do.call(
+  rbind,
+  lapply(c(4L, 8L), function(h) {
+
+    prueba <- lmtest::bgtest(
+      regresion_adf_aic,
+      order = h,
+      type = "F"
+    )
+
+    data.frame(
+      Orden = h,
+      Estadistico_F = unname(prueba$statistic),
+      GL_numerador = unname(prueba$parameter[1]),
+      GL_denominador = unname(prueba$parameter[2]),
+      Valor_p = prueba$p.value,
+      Decision = if (prueba$p.value < 0.05) {
+        "Se rechaza H0"
+      } else {
+        "No se rechaza H0"
+      }
+    )
+  })
+)
+
+knitr::kable(
+  tabla_bg_adf,
+  digits = 4,
+  row.names = FALSE,
+  col.names = c(
+    "Orden",
+    "Estadístico F",
+    "GL numerador",
+    "GL denominador",
+    "Valor-p",
+    "Decisión al 5 %"
+  )
+)
+```
+
+La prueba de Breusch–Godfrey no rechaza la hipótesis de ausencia de autocorrelación hasta cuatro y ocho trimestres, con valores-p de 0,0963 y 0,0996, respectivamente. Este diagnóstico respalda la especificación ADF seleccionada por AIC, aunque el resultado de Ljung–Box a 12 rezagos aconseja mantener cautela. En el logaritmo de la serie original, el ADF no rechaza la hipótesis de raíz unitaria y KPSS rechaza la estacionariedad alrededor de una tendencia lineal. Para la primera diferencia, KPSS no rechaza la estacionariedad alrededor de un nivel constante. El ADF con constante y siete rezagos rechaza la raíz unitaria al 10 %, pero no al 5 %. Por tanto, la evidencia favorece como hipótesis de trabajo la estacionariedad en primeras diferencias frente a la estacionariedad alrededor de una tendencia lineal, sin constituir una confirmación concluyente al 5 %. Se adoptará inicialmente (d=1) para identificar el modelo. Esta elección se revisará mediante los correlogramas y los diagnósticos del modelo ajustado.
+
+## Identificación del modelo para el logaritmo del desempleo
+
+Se examinan las funciones de autocorrelación y autocorrelación parcial de la primera diferencia del logaritmo, utilizando únicamente la muestra de estimación. Se consideran 24 rezagos, equivalentes a seis años. También se revisan los múltiplos de cuatro para identificar posibles patrones estacionales trimestrales.
+
+```{r}
+#| label: fig-correlogramas-desempleo-diff
+#| fig-cap: "Funciones de autocorrelación y autocorrelación parcial de la primera diferencia del logaritmo del desempleo."
+#| fig-width: 8
+#| fig-height: 6
+
+local({
+  opciones_graficas <- par(
+    mfrow = c(2, 1),
+    mar = c(4, 4, 1, 1)
+  )
+  on.exit(par(opciones_graficas))
+
+  stats::acf(
+    as.numeric(diff_log_desempleo),
+    lag.max = 24,
+    main = "",
+    xlab = "Rezago (trimestres)",
+    ylab = "Autocorrelación",
+    col = "#24557A",
+    lwd = 1
+  )
+
+  stats::pacf(
+    as.numeric(diff_log_desempleo),
+    lag.max = 24,
+    main = "",
+    xlab = "Rezago (trimestres)",
+    ylab = "Autocorrelación parcial",
+    col = "#24557A",
+    lwd = 1
+  )
+})
+```
+
+La función de autocorrelación de la primera diferencia del logaritmo presenta valores positivos significativos en los múltiplos de cuatro, que persisten hasta el rezago 24. La función de autocorrelación parcial también muestra un pico destacado en el rezago cuatro. Este patrón sugiere dependencia estacional trimestral que deberá incorporarse en la identificación del modelo. Antes de seleccionar los órdenes estacionales, se examinará si es necesaria una diferencia de período cuatro.
+
+### Revisión de la diferenciación estacional
+
+Se utiliza la prueba OCSB para evaluar la necesidad de una diferencia estacional de período cuatro. El análisis emplea únicamente el logaritmo de la muestra de estimación.
+
+```{r}
+#| label: tbl-diferenciacion-estacional-desempleo
+#| tbl-cap: "Recomendación de diferenciación estacional mediante la prueba OCSB para el logaritmo del desempleo."
+
+stopifnot(
+  stats::frequency(log_desempleo_entrenamiento) == 4
+)
+
+D_desempleo <- forecast::nsdiffs(
+  log_desempleo_entrenamiento,
+  alpha = 0.05,
+  test = "ocsb",
+  max.D = 1
+)
+
+tabla_diferenciacion_estacional <- data.frame(
+  Prueba = "OCSB",
+  Periodo = 4L,
+  D_recomendado = D_desempleo,
+  Recomendacion = if (D_desempleo == 1L) {
+    "Aplicar una diferencia estacional"
+  } else {
+    "No aplicar diferencia estacional"
+  }
+)
+
+knitr::kable(
+  tabla_diferenciacion_estacional,
+  row.names = FALSE,
+  col.names = c(
+    "Prueba",
+    "Período estacional",
+    "D recomendado",
+    "Recomendación"
+  )
+)
+```
+
+La prueba OCSB recomienda no aplicar diferenciación estacional al logaritmo del desempleo ((D=0)). Sin embargo, el correlograma de su primera diferencia presenta dependencia en los múltiplos de cuatro. Por ello, se considerarán modelos con términos autorregresivos o de medias móviles estacionales de período cuatro, manteniendo inicialmente una diferencia ordinaria ((d=1)).
+
+### Estimación y comparación de modelos candidatos
+
+Los modelos se estiman por máxima verosimilitud utilizando únicamente la muestra de estimación. Se comparan mediante AIC, AICc y BIC. La selección final también considerará la convergencia, las raíces de los polinomios y el diagnóstico de los residuos.
+
+```{r}
+#| label: tbl-modelos-desempleo
+#| tbl-cap: "Comparación de modelos candidatos para el logaritmo del desempleo."
+
+# Órdenes ordinarios y estacionales candidatos
+candidatos_desempleo <- data.frame(
+  p = c(1, 0, 1, 1, 0, 1, 2, 1, 0, 1),
+  q = c(0, 1, 1, 0, 1, 1, 1, 0, 1, 1),
+  P = c(0, 0, 0, 1, 1, 1, 1, 0, 0, 0),
+  Q = c(0, 0, 0, 0, 0, 0, 0, 1, 1, 1)
+)
+
+# Evaluar cada combinación con y sin deriva
+candidatos_desempleo <- rbind(
+  transform(candidatos_desempleo, Deriva = FALSE),
+  transform(candidatos_desempleo, Deriva = TRUE)
+)
+
+candidatos_desempleo$Modelo <- with(
+  candidatos_desempleo,
+  paste0(
+    "ARIMA(", p, ",1,", q, ")",
+    "(", P, ",0,", Q, ")[4]",
+    ifelse(Deriva, " con deriva", " sin deriva")
+  )
+)
+
+modelos_desempleo <- lapply(
+  seq_len(nrow(candidatos_desempleo)),
+  function(i) {
+
+    candidato <- candidatos_desempleo[i, ]
+
+    tryCatch(
+      forecast::Arima(
+        log_desempleo_entrenamiento,
+        order = c(candidato$p, 1, candidato$q),
+        seasonal = list(
+          order = c(candidato$P, 0, candidato$Q),
+          period = 4
+        ),
+        include.drift = candidato$Deriva,
+        method = "ML"
+      ),
+      error = function(e) e
+    )
+  }
+)
+
+names(modelos_desempleo) <- candidatos_desempleo$Modelo
+
+tabla_modelos_desempleo <- do.call(
+  rbind,
+  lapply(seq_along(modelos_desempleo), function(i) {
+
+    ajuste <- modelos_desempleo[[i]]
+
+    if (inherits(ajuste, "error")) {
+      return(data.frame(
+        Modelo = names(modelos_desempleo)[i],
+        AIC = NA_real_,
+        AICc = NA_real_,
+        BIC = NA_real_,
+        Convergencia = "Error de ajuste"
+      ))
+    }
+
+    data.frame(
+      Modelo = names(modelos_desempleo)[i],
+      AIC = ajuste$aic,
+      AICc = ajuste$aicc,
+      BIC = ajuste$bic,
+      Convergencia = if (isTRUE(ajuste$code == 0)) {
+        "Sí"
+      } else {
+        "No"
+      }
+    )
+  })
+)
+
+tabla_modelos_desempleo <- tabla_modelos_desempleo[
+  order(tabla_modelos_desempleo$AICc, na.last = TRUE),
+]
+
+knitr::kable(
+  tabla_modelos_desempleo,
+  digits = 3,
+  row.names = FALSE
+)
+```
+
+El modelo ARIMA(0,1,1)(1,0,0)\[4\] sin deriva obtiene los menores valores de AICc y BIC entre los candidatos evaluados. Aunque otros modelos presentan un AIC ligeramente inferior, incorporan más parámetros. Las diferencias de AICc entre los cuatro primeros ajustes son pequeñas; por ello, se compararán sus condiciones de estacionariedad e invertibilidad y la autocorrelación de sus residuos.
+
+### Diagnóstico de los modelos más competitivos
+
+Las raíces de los factores AR y MA deben tener módulos mayores que uno para satisfacer, respectivamente, la estacionariedad de la serie diferenciada y la invertibilidad del modelo. La prueba de Ljung–Box evalúa la ausencia de autocorrelación en los residuos.
+
+```{r}
+#| label: tbl-diagnostico-modelos-desempleo
+#| tbl-cap: "Raíces y diagnóstico de autocorrelación de los cuatro modelos con menor AICc."
+
+nombres_competitivos <- head(
+  tabla_modelos_desempleo$Modelo[
+    tabla_modelos_desempleo$Convergencia == "Sí"
+  ],
+  4
+)
+
+modelos_competitivos <- modelos_desempleo[
+  nombres_competitivos
+]
+
+# Raíces de un factor ordinario o estacional.
+# En R, el polinomio AR usa signo negativo y el MA positivo.
+raices_factor <- function(coeficientes, prefijo, periodo, signo) {
+
+  valores <- coeficientes[
+    grepl(
+      paste0("^", prefijo, "[0-9]+$"),
+      names(coeficientes)
+    )
+  ]
+
+  if (length(valores) == 0L) {
+    return(complex(0))
+  }
+
+  polinomio <- numeric(periodo * length(valores) + 1L)
+  polinomio[1] <- 1
+  polinomio[1L + periodo * seq_along(valores)] <-
+    signo * unname(valores)
+
+  polyroot(polinomio)
+}
+
+minimo_modulo <- function(raices) {
+  if (length(raices) == 0L) {
+    return(NA_real_)
+  }
+  min(Mod(raices))
+}
+
+tabla_diagnostico_desempleo <- do.call(
+  rbind,
+  lapply(names(modelos_competitivos), function(nombre) {
+
+    ajuste <- modelos_competitivos[[nombre]]
+    coeficientes <- stats::coef(ajuste)
+
+    # Las raíces del producto son las de sus factores
+    raices_ar <- c(
+      raices_factor(coeficientes, "ar", 1L, -1),
+      raices_factor(coeficientes, "sar", 4L, -1)
+    )
+
+    raices_ma <- c(
+      raices_factor(coeficientes, "ma", 1L, 1),
+      raices_factor(coeficientes, "sma", 4L, 1)
+    )
+
+    residuos <- as.numeric(stats::residuals(ajuste))
+    residuos <- residuos[is.finite(residuos)]
+
+    # Número de parámetros AR y MA: p + q + P + Q
+    parametros_arma <- sum(
+      grepl("^(ar|ma|sar|sma)[0-9]+$", names(coeficientes))
+    )
+
+    valores_p <- vapply(
+      c(8L, 12L, 16L),
+      function(h) {
+        stats::Box.test(
+          residuos,
+          lag = h,
+          type = "Ljung-Box",
+          fitdf = parametros_arma
+        )$p.value
+      },
+      numeric(1)
+    )
+
+    data.frame(
+      Modelo = nombre,
+      Min_modulo_AR = minimo_modulo(raices_ar),
+      Min_modulo_MA = minimo_modulo(raices_ma),
+      Valor_p_LB8 = valores_p[1],
+      Valor_p_LB12 = valores_p[2],
+      Valor_p_LB16 = valores_p[3]
+    )
+  })
+)
+
+knitr::kable(
+  tabla_diagnostico_desempleo,
+  digits = 4,
+  row.names = FALSE,
+  col.names = c(
+    "Modelo",
+    "Mín. módulo AR",
+    "Mín. módulo MA",
+    "Valor-p LB(8)",
+    "Valor-p LB(12)",
+    "Valor-p LB(16)"
+  )
+)
+```
+
+Se selecciona el modelo ARIMA(0,1,1)(1,0,0)\[4\] sin deriva entre los candidatos evaluados. Además de obtener los menores valores de AICc y BIC, satisface las condiciones de estacionariedad de la serie diferenciada e invertibilidad, con módulos mínimos de las raíces AR y MA de 1,1620 y 3,7125, respectivamente. La prueba de Ljung–Box no rechaza la ausencia de autocorrelación al 5 % a 8, 12 y 16 rezagos. No obstante, sus valores-p son inferiores a 0,10, por lo que el diagnóstico debe interpretarse con cautela y complementarse con el correlograma residual.
+
+### Parámetros del modelo seleccionado
+
+```{r}
+#| label: tbl-parametros-modelo-desempleo
+#| tbl-cap: "Parámetros estimados del modelo ARIMA(0,1,1)(1,0,0)[4] sin deriva."
+
+modelo_desempleo_seleccionado <- modelos_desempleo[[
+  "ARIMA(0,1,1)(1,0,0)[4] sin deriva"
+]]
+
+coeficientes_desempleo <- stats::coef(
+  modelo_desempleo_seleccionado
+)
+
+errores_desempleo <- sqrt(
+  diag(modelo_desempleo_seleccionado$var.coef)
+)
+
+tabla_parametros_desempleo <- data.frame(
+  Parametro = c(
+    "MA(1): theta_1",
+    "AR estacional(1): Phi_1"
+  ),
+  Estimacion = unname(
+    coeficientes_desempleo[c("ma1", "sar1")]
+  ),
+  Error_estandar = unname(
+    errores_desempleo[c("ma1", "sar1")]
+  )
+)
+
+knitr::kable(
+  tabla_parametros_desempleo,
+  digits = 5,
+  row.names = FALSE,
+  col.names = c(
+    "Parámetro",
+    "Estimación",
+    "Error estándar"
+  )
+)
+```
+
+### Modelo estimado seleccionado
+
+Se selecciona el modelo ARIMA(0,1,1)(1,0,0) de período estacional cuatro, sin deriva. Definiendo $Z_t=\log(U_t)$, donde $U_t$ representa la tasa de desempleo, el modelo estimado es:
+
+$$
+(1-0{,}54842B^4)(1-B)Z_t
+=
+(1-0{,}26936B)\varepsilon_t,
+$$
+
+donde $B$ es el operador de rezago, definido por $BZ_t=Z_{t-1}$, y $\varepsilon_t$ representa una innovación de media cero, varianza constante y sin autocorrelación.
+
+Para la primera diferencia del logaritmo, $W_t=Z_t-Z_{t-1}$, el modelo se expresa como:
+
+$$
+W_t
+=
+0{,}54842W_{t-4}
++\varepsilon_t
+-0{,}26936\varepsilon_{t-1}.
+$$
+
+Equivalentemente, en términos del logaritmo de la tasa de desempleo:
+
+$$
+Z_t
+=
+Z_{t-1}
++0{,}54842(Z_{t-4}-Z_{t-5})
++\varepsilon_t
+-0{,}26936\varepsilon_{t-1}.
+$$
+
+El término autorregresivo estacional relaciona la variación trimestral del logaritmo del desempleo con la registrada en el mismo trimestre del año anterior. El término MA(1) incorpora el efecto de la innovación del trimestre anterior. El modelo no incluye deriva.
+
+### Diagnóstico gráfico de los residuos
+
+Se examina la evolución temporal de los residuos y su función de autocorrelación para identificar patrones que el modelo no haya capturado.
+
+```{r}
+#| label: fig-residuos-modelo-desempleo
+#| fig-cap: "Residuos y función de autocorrelación del modelo ARIMA(0,1,1)(1,0,0)[4] sin deriva."
+#| fig-width: 8
+#| fig-height: 6
+
+residuos_desempleo <- stats::residuals(
+  modelo_desempleo_seleccionado
+)
+
+local({
+  opciones_graficas <- par(
+    mfrow = c(2, 1),
+    mar = c(4, 4, 1, 1)
+  )
+  on.exit(par(opciones_graficas))
+
+  plot(
+    residuos_desempleo,
+    type = "l",
+    main = "",
+    xlab = "Año",
+    ylab = "Residuo (escala logarítmica)",
+    col = "#24557A",
+    lwd = 1
+  )
+
+  abline(h = 0, col = "gray50", lty = 2)
+
+  residuos_finitos <- as.numeric(residuos_desempleo)
+  residuos_finitos <- residuos_finitos[
+    is.finite(residuos_finitos)
+  ]
+
+  stats::acf(
+    residuos_finitos,
+    lag.max = 24,
+    main = "",
+    xlab = "Rezago (trimestres)",
+    ylab = "Autocorrelación",
+    col = "#24557A",
+    lwd = 1
+  )
+})
+```
+
+Los residuos oscilan alrededor de cero sin una tendencia evidente, aunque presentan algunas observaciones de mayor magnitud, especialmente hacia 1982 y 1994. El correlograma residual muestra una autocorrelación negativa en el rezago seis que supera ligeramente la banda de referencia. Sin embargo, no se observa el patrón persistente de autocorrelación positiva en los múltiplos de cuatro que caracterizaba la serie diferenciada.
+
+En conjunto con la prueba de Ljung–Box, que no rechaza la ausencia de autocorrelación al 5 % en los horizontes evaluados, estos resultados permiten mantener el modelo seleccionado para realizar los pronósticos. Los diagnósticos no demuestran independencia, normalidad ni constancia de la varianza de los residuos.
+
+## Pronósticos a un año y evaluación
+
+Se generan pronósticos para los cuatro trimestres de evaluación desde un único origen, situado en 2005-T3. Estos períodos pertenecen a la serie histórica disponible, pero sus observaciones no se utilizaron en la estimación ni en la selección del modelo.
+
+Los pronósticos se transforman a la escala original mediante la media lognormal. Los intervalos de predicción del 95 % se obtienen transformando los límites calculados en escala logarítmica. Ambos cálculos suponen una distribución predictiva normal en dicha escala.
+
+```{r}
+#| label: tbl-pronosticos-desempleo
+#| tbl-cap: "Pronósticos de la tasa de desempleo para los cuatro trimestres de evaluación e intervalos de predicción del 95 %."
+
+h_desempleo <- 4L
+
+prediccion_log_desempleo <- stats::predict(
+  modelo_desempleo_seleccionado,
+  n.ahead = h_desempleo,
+  se.fit = TRUE
+)
+
+media_log_pronostico <- as.numeric(
+  prediccion_log_desempleo$pred
+)
+
+se_log_pronostico <- as.numeric(
+  prediccion_log_desempleo$se
+)
+
+# Media predictiva en la escala original, bajo el supuesto lognormal
+pronostico_desempleo <- exp(
+  media_log_pronostico + 0.5 * se_log_pronostico^2
+)
+
+cuantil_95 <- stats::qnorm(0.975)
+
+limite_inferior_desempleo <- exp(
+  media_log_pronostico - cuantil_95 * se_log_pronostico
+)
+
+limite_superior_desempleo <- exp(
+  media_log_pronostico + cuantil_95 * se_log_pronostico
+)
+
+observado_desempleo <- as.numeric(desempleo_evaluacion)
+
+periodos_evaluacion <- paste0(
+  floor(as.numeric(time(desempleo_evaluacion))),
+  "-T",
+  as.integer(cycle(desempleo_evaluacion))
+)
+
+tabla_pronosticos_desempleo <- data.frame(
+  Periodo = periodos_evaluacion,
+  Horizonte = seq_len(h_desempleo),
+  Observado = observado_desempleo,
+  Pronostico = pronostico_desempleo,
+  Inferior_95 = limite_inferior_desempleo,
+  Superior_95 = limite_superior_desempleo,
+  Error = observado_desempleo - pronostico_desempleo
+)
+
+knitr::kable(
+  tabla_pronosticos_desempleo,
+  digits = 3,
+  row.names = FALSE,
+  col.names = c(
+    "Período",
+    "Horizonte",
+    "Observado (%)",
+    "Pronóstico (%)",
+    "Límite inferior 95 %",
+    "Límite superior 95 %",
+    "Error (puntos porcentuales)"
+  )
+)
+```
+
+Los pronósticos superan los valores observados en los cuatro trimestres de evaluación. La mayor sobreestimación corresponde a 2005-T4, con un error de −1,143 puntos porcentuales, mientras que la menor se presenta en 2006-T1, con −0,133 puntos porcentuales. Todos los valores observados están contenidos en los intervalos de predicción del 95 %. Sin embargo, la amplitud de estos intervalos impide interpretar su cobertura como evidencia suficiente de precisión del pronóstico.
+
+### Evaluación de la precisión del pronóstico
+
+Se calcula la raíz del error cuadrático medio para los cuatro trimestres reservados:
+
+$$
+\operatorname{RMSE}
+=
+\sqrt{\frac{1}{4}\sum_{h=1}^{4}
+\left(U_{T+h}-\widehat U_{T+h\mid T}\right)^2}.
+$$
+
+El RMSE se expresa en puntos porcentuales. Se compara el modelo seleccionado con los métodos ingenuo e ingenuo estacional, utilizando el mismo origen y los mismos períodos de evaluación.
+
+```{r}
+#| label: tbl-rmse-desempleo
+#| tbl-cap: "Comparación del RMSE de pronóstico en los cuatro trimestres de evaluación."
+
+# Método ingenuo: repetir el último dato de estimación
+pronostico_ingenuo <- rep(
+  as.numeric(tail(desempleo_entrenamiento, 1)),
+  h_desempleo
+)
+
+# Método ingenuo estacional: repetir los últimos cuatro trimestres
+pronostico_ingenuo_estacional <- as.numeric(
+  tail(desempleo_entrenamiento, 4)
+)
+
+calcular_rmse <- function(observado, pronosticado) {
+  stopifnot(
+    length(observado) == length(pronosticado),
+    all(is.finite(observado)),
+    all(is.finite(pronosticado))
+  )
+
+  sqrt(mean((observado - pronosticado)^2))
+}
+
+rmse_modelo_desempleo <- calcular_rmse(
+  observado_desempleo,
+  pronostico_desempleo
+)
+
+rmse_ingenuo <- calcular_rmse(
+  observado_desempleo,
+  pronostico_ingenuo
+)
+
+rmse_ingenuo_estacional <- calcular_rmse(
+  observado_desempleo,
+  pronostico_ingenuo_estacional
+)
+
+tabla_rmse_desempleo <- data.frame(
+  Metodo = c(
+    "ARIMA(0,1,1)(1,0,0)[4] sin deriva",
+    "Ingenuo",
+    "Ingenuo estacional"
+  ),
+  RMSE = c(
+    rmse_modelo_desempleo,
+    rmse_ingenuo,
+    rmse_ingenuo_estacional
+  )
+)
+
+knitr::kable(
+  tabla_rmse_desempleo,
+  digits = 4,
+  row.names = FALSE,
+  col.names = c(
+    "Método",
+    "RMSE (puntos porcentuales)"
+  )
+)
+```
+
+El modelo ARIMA(0,1,1)(1,0,0) de período cuatro, sin deriva, obtiene un RMSE de 0,6778 puntos porcentuales en los cuatro trimestres de evaluación. Este resultado es inferior al del método ingenuo (1,0667) y al del ingenuo estacional (1,4774). Las reducciones del RMSE son aproximadamente del 36,5 % y 54,1 %, respectivamente.
+
+Por tanto, el pronóstico presenta un desempeño favorable frente a las referencias utilizadas durante el año evaluado. Sin embargo, el modelo sobreestima la tasa de desempleo en los cuatro períodos y sus intervalos de predicción son amplios. Además, la evaluación comprende únicamente cuatro observaciones desde un solo origen, por lo que no permite asegurar que esta ventaja se mantenga en otros períodos.
+
+# Pregunta 3: Consistencia de los estimadores mediante simulación
+
+## Modelos y objetivo
+
+Se estudia mediante simulación Monte Carlo el comportamiento de los estimadores de dos modelos autorregresivos:
+
+**Modelo 1: componente determinístico de tendencia**
+
+$$
+y_t=\delta t+\phi y_{t-1}+\omega_t.
+$$
+
+**Modelo 2: componente determinístico constante**
+
+$$
+y_t=c+\phi y_{t-1}+\omega_t.
+$$
+
+En ambos modelos, las innovaciones son independientes e idénticamente distribuidas:
+
+$$
+\omega_t\overset{\text{iid}}{\sim}N(0,\sigma_\omega^2).
+$$
+
+Se considera $|\phi|<1$, condición de estabilidad del componente autorregresivo. En el primer modelo, esta condición no elimina la tendencia determinística de la serie.
+
+Un estimador $\widehat{\theta}_n$ es consistente si converge en probabilidad al parámetro verdadero $\theta$. Es decir, para cualquier tolerancia $\eta>0$:
+
+$$
+\Pr\left(
+|\widehat{\theta}_n-\theta|>\eta
+\right)\longrightarrow 0
+\quad\text{cuando }n\longrightarrow\infty.
+$$
+
+Una simulación finita no demuestra esta propiedad para todos los tamaños de muestra, pero permite examinar si los errores de estimación disminuyen y las estimaciones se concentran alrededor de los valores verdaderos.
+
+## Diseño del experimento
+
+Se conservan los parámetros de la simulación original: $\delta=0{,}4$ y $\phi=0{,}2$ para el primer modelo; $c=0{,}5$ y $\phi=0{,}2$ para el segundo. Además, se fija $\sigma_\omega=1$ y se utiliza la condición inicial $y_0=0$ en ambos casos.
+
+Para cada tamaño de muestra se realizan 5.000 repeticiones independientes. El tamaño $n$ corresponde a las observaciones $t=1,\ldots,n$ disponibles para estimar la regresión; $y_0$ se utiliza como condición inicial.
+
+Los parámetros se estimarán mediante mínimos cuadrados ordinarios. La regresión del primer modelo incluirá la tendencia y el rezago de la respuesta, sin intercepto adicional. La del segundo incluirá un intercepto y el rezago de la respuesta.
+
+```{r}
+#| label: tbl-diseno-simulacion-consistencia
+#| tbl-cap: "Configuración del experimento Monte Carlo para los dos modelos."
+
+set.seed(20261009)
+
+tamanos_simulacion <- c(50L, 100L, 500L, 1000L)
+repeticiones_simulacion <- 5000L
+
+delta_verdadero <- 0.4
+phi_verdadero <- 0.2
+c_verdadero <- 0.5
+
+sigma_omega <- 1
+y_inicial <- 0
+tolerancia_simulacion <- 0.05
+
+tabla_diseno_simulacion <- data.frame(
+  Elemento = c(
+    "Coeficiente de tendencia: delta",
+    "Coeficiente autorregresivo: phi",
+    "Constante: c",
+    "Desviación estándar de las innovaciones",
+    "Condición inicial: y_0",
+    "Tamaños de muestra",
+    "Repeticiones por tamaño",
+    "Tolerancia absoluta: eta"
+  ),
+  Valor = c(
+    "0,4",
+    "0,2",
+    "0,5",
+    "1",
+    "0",
+    paste(tamanos_simulacion, collapse = ", "),
+    as.character(repeticiones_simulacion),
+    "0,05"
+  )
+)
+
+knitr::kable(
+  tabla_diseno_simulacion,
+  row.names = FALSE
+)
+```
+
+La comparación considerará la media de las estimaciones, el sesgo, la desviación estándar Monte Carlo, el RMSE y la proporción de estimaciones cuyo error absoluto supera $\eta=0{,}05$. Esta última medida aproxima la probabilidad de error para una tolerancia fija.
+
+## Simulación y estimación de los parámetros
+
+En cada repetición se generan las innovaciones y se construyen recursivamente ambas series a partir de $y_0=0$. Los modelos se estiman utilizando las observaciones $t=1,\ldots,n$ y sus correspondientes valores rezagados.
+
+Se utilizan las mismas innovaciones para los dos modelos dentro de cada repetición, lo que permite compararlos bajo las mismas perturbaciones aleatorias. Las repeticiones son independientes entre sí.
+
+```{r}
+#| label: simulacion-consistencia-modelos
+
+simular_estimar_modelos <- function(
+  n, delta, phi, constante, sigma, y0
+) {
+
+  tiempo <- seq_len(n)
+  innovaciones <- stats::rnorm(n, mean = 0, sd = sigma)
+
+  # La primera posición contiene y_0
+  y_tendencia <- numeric(n + 1L)
+  y_constante <- numeric(n + 1L)
+
+  y_tendencia[1] <- y0
+  y_constante[1] <- y0
+
+  for (t in tiempo) {
+
+    y_tendencia[t + 1L] <-
+      delta * t + phi * y_tendencia[t] + innovaciones[t]
+
+    y_constante[t + 1L] <-
+      constante + phi * y_constante[t] + innovaciones[t]
+  }
+
+  # Respuestas: y_1, ..., y_n
+  # Regresores rezagados: y_0, ..., y_{n-1}
+  datos_tendencia <- data.frame(
+    respuesta = y_tendencia[-1L],
+    tiempo = tiempo,
+    rezago = y_tendencia[seq_len(n)]
+  )
+
+  datos_constante <- data.frame(
+    respuesta = y_constante[-1L],
+    rezago = y_constante[seq_len(n)]
+  )
+
+  # Modelo 1: tendencia y rezago, sin intercepto
+  ajuste_tendencia <- stats::lm(
+    respuesta ~ 0 + tiempo + rezago,
+    data = datos_tendencia
+  )
+
+  # Modelo 2: intercepto y rezago
+  ajuste_constante <- stats::lm(
+    respuesta ~ rezago,
+    data = datos_constante
+  )
+
+  c(
+    delta_hat = unname(stats::coef(ajuste_tendencia)["tiempo"]),
+    phi_hat_tendencia = unname(
+      stats::coef(ajuste_tendencia)["rezago"]
+    ),
+    c_hat = unname(
+      stats::coef(ajuste_constante)["(Intercept)"]
+    ),
+    phi_hat_constante = unname(
+      stats::coef(ajuste_constante)["rezago"]
+    )
+  )
+}
+
+# Fijar la semilla junto a la ejecución para reproducir los resultados
+set.seed(20261009)
+
+resultados_simulacion <- lapply(
+  tamanos_simulacion,
+  function(n) {
+
+    estimaciones <- replicate(
+      repeticiones_simulacion,
+      simular_estimar_modelos(
+        n = n,
+        delta = delta_verdadero,
+        phi = phi_verdadero,
+        constante = c_verdadero,
+        sigma = sigma_omega,
+        y0 = y_inicial
+      )
+    )
+
+    # Una fila por repetición y una columna por estimador
+    resultados <- as.data.frame(t(estimaciones))
+    resultados$n <- n
+    resultados$Repeticion <- seq_len(repeticiones_simulacion)
+
+    resultados
+  }
+)
+
+resultados_simulacion <- do.call(
+  rbind,
+  resultados_simulacion
+)
+
+rownames(resultados_simulacion) <- NULL
+
+# Comprobar cantidad de resultados y estimaciones finitas
+columnas_estimadores <- c(
+  "delta_hat",
+  "phi_hat_tendencia",
+  "c_hat",
+  "phi_hat_constante"
+)
+
+stopifnot(
+  nrow(resultados_simulacion) ==
+    length(tamanos_simulacion) * repeticiones_simulacion,
+  all(
+    is.finite(
+      as.matrix(resultados_simulacion[, columnas_estimadores])
+    )
+  )
+)
+```
+
+## Resultados de la simulación
+
+Para cada parámetro y tamaño de muestra se calcula la media de las estimaciones, el sesgo, la desviación estándar Monte Carlo y la raíz del error cuadrático medio:
+
+$$
+\operatorname{Sesgo}
+=
+\frac{1}{M}\sum_{j=1}^{M}\widehat{\theta}_{n,j}-\theta,
+\qquad
+\operatorname{RMSE}
+=
+\sqrt{
+\frac{1}{M}\sum_{j=1}^{M}
+(\widehat{\theta}_{n,j}-\theta)^2
+}.
+$$
+
+También se calcula la proporción de repeticiones en las que el error absoluto supera la tolerancia $\eta=0{,}05$:
+
+$$
+\widehat p_n
+=
+\frac{1}{M}\sum_{j=1}^{M}
+\mathbf{1}\left\{
+|\widehat{\theta}_{n,j}-\theta|>0{,}05
+\right\}.
+$$
+
+Una disminución del RMSE y de esta proporción al aumentar $n$ constituye evidencia de concentración de los estimadores alrededor de sus valores verdaderos.
+
+```{r}
+#| label: tbl-resultados-consistencia
+#| tbl-cap: "Resultados Monte Carlo de la estimación de los parámetros en ambos modelos."
+
+especificaciones_estimadores <- data.frame(
+  Modelo = c(
+    "Con tendencia",
+    "Con tendencia",
+    "Con constante",
+    "Con constante"
+  ),
+  Parametro = c("delta", "phi", "c", "phi"),
+  Columna = c(
+    "delta_hat",
+    "phi_hat_tendencia",
+    "c_hat",
+    "phi_hat_constante"
+  ),
+  Verdadero = c(
+    delta_verdadero,
+    phi_verdadero,
+    c_verdadero,
+    phi_verdadero
+  )
+)
+
+tabla_consistencia <- do.call(
+  rbind,
+  lapply(seq_len(nrow(especificaciones_estimadores)), function(i) {
+
+    especificacion <- especificaciones_estimadores[i, ]
+
+    do.call(
+      rbind,
+      lapply(tamanos_simulacion, function(n_actual) {
+
+        estimaciones <- resultados_simulacion[
+          resultados_simulacion$n == n_actual,
+          especificacion$Columna
+        ]
+
+        errores <- estimaciones - especificacion$Verdadero
+
+        data.frame(
+          Modelo = especificacion$Modelo,
+          Parametro = especificacion$Parametro,
+          n = n_actual,
+          Verdadero = especificacion$Verdadero,
+          Media = mean(estimaciones),
+          Sesgo = mean(errores),
+          DE_MC = stats::sd(estimaciones),
+          RMSE = sqrt(mean(errores^2)),
+          Proporcion_error = mean(
+            abs(errores) > tolerancia_simulacion
+          )
+        )
+      })
+    )
+  })
+)
+
+rownames(tabla_consistencia) <- NULL
+
+knitr::kable(
+  tabla_consistencia,
+  digits = c(0, 0, 0, 4, 4, 4, 4, 4, 4),
+  row.names = FALSE,
+  col.names = c(
+    "Modelo",
+    "Parámetro",
+    "n",
+    "Valor verdadero",
+    "Media",
+    "Sesgo",
+    "DE Monte Carlo",
+    "RMSE",
+    "Proporción |error| > 0,05"
+  )
+)
+```
+
+La @tbl-resultados-consistencia muestra que las medias de las estimaciones se aproximan a sus valores verdaderos conforme aumenta el tamaño de muestra. Además, disminuyen el sesgo absoluto, la desviación estándar Monte Carlo y el RMSE.
+
+En el modelo con tendencia, el RMSE de la estimación de $\delta$ disminuye de 0,0657 para $n=50$ a 0,0150 para $n=1000$. La proporción de errores absolutos mayores que 0,05 pasa de 0,4380 a 0,0002. Para $\phi$, el RMSE disminuye de 0,1362 a 0,0300 y dicha proporción pasa de 0,7178 a 0,1004.
+
+En el modelo con constante, el RMSE de la estimación de $c$ disminuye de 0,1713 a 0,0375, mientras que el de $\phi$ disminuye de 0,1409 a 0,0314. Las proporciones de errores mayores que 0,05 también disminuyen para ambos parámetros.
+
+El estimador de $\phi$ presenta un sesgo negativo en muestras pequeñas, que se reduce al aumentar $n$ en ambos modelos. Su precisión es similar entre las dos especificaciones, con un RMSE ligeramente menor en el modelo con tendencia para los tamaños considerados.
+
+Estos resultados son compatibles con la consistencia de los estimadores bajo la configuración simulada. Sin embargo, una simulación finita y una sola tolerancia no constituyen una demostración general de convergencia en probabilidad. La menor magnitud del RMSE de $\widehat{\delta}$ frente al de $\widehat c$ tampoco implica superioridad general de un modelo, pues ambos parámetros representan componentes diferentes.
+
+## Comparación gráfica de los errores de estimación
+
+```{r}
+#| label: fig-comparacion-consistencia
+#| fig-cap: "RMSE y proporción de errores absolutos mayores que 0,05 según el tamaño de muestra."
+#| fig-width: 9
+#| fig-height: 7
+
+local({
+  opciones_graficas <- par(
+    mfrow = c(2, 2),
+    mar = c(4, 4, 1, 1)
+  )
+  on.exit(par(opciones_graficas))
+
+  extraer_medida <- function(modelo, parametro, medida) {
+    filas <- tabla_consistencia[
+      tabla_consistencia$Modelo == modelo &
+        tabla_consistencia$Parametro == parametro,
+    ]
+
+    filas <- filas[match(tamanos_simulacion, filas$n), ]
+    filas[[medida]]
+  }
+
+  graficar_comparacion <- function(
+    medida, parametro_1, parametro_2, etiqueta_y, etiquetas
+  ) {
+
+    valores_1 <- extraer_medida(
+      "Con tendencia", parametro_1, medida
+    )
+
+    valores_2 <- extraer_medida(
+      "Con constante", parametro_2, medida
+    )
+
+    limites_y <- if (medida == "Proporcion_error") {
+      c(0, 1)
+    } else {
+      c(0, max(valores_1, valores_2) * 1.1)
+    }
+
+    plot(
+      tamanos_simulacion,
+      valores_1,
+      type = "b",
+      pch = 16,
+      col = "#24557A",
+      lwd = 2,
+      log = "x",
+      xaxt = "n",
+      ylim = limites_y,
+      main = "",
+      xlab = "Tamaño de muestra (escala logarítmica)",
+      ylab = etiqueta_y
+    )
+
+    axis(
+      1,
+      at = tamanos_simulacion,
+      labels = tamanos_simulacion
+    )
+
+    lines(
+      tamanos_simulacion,
+      valores_2,
+      type = "b",
+      pch = 17,
+      col = "#C46A28",
+      lwd = 2,
+      lty = 2
+    )
+
+    legend(
+      "topright",
+      legend = etiquetas,
+      col = c("#24557A", "#C46A28"),
+      pch = c(16, 17),
+      lty = c(1, 2),
+      lwd = 2,
+      bty = "n",
+      cex = 0.8
+    )
+  }
+
+  graficar_comparacion(
+    "RMSE", "delta", "c",
+    "RMSE: delta y c",
+    c("delta: con tendencia", "c: con constante")
+  )
+
+  graficar_comparacion(
+    "RMSE", "phi", "phi",
+    "RMSE: phi",
+    c("phi: con tendencia", "phi: con constante")
+  )
+
+  graficar_comparacion(
+    "Proporcion_error", "delta", "c",
+    "Proporción |error| > 0,05: delta y c",
+    c("delta: con tendencia", "c: con constante")
+  )
+
+  graficar_comparacion(
+    "Proporcion_error", "phi", "phi",
+    "Proporción |error| > 0,05: phi",
+    c("phi: con tendencia", "phi: con constante")
+  )
+})
+```
+
+La @fig-comparacion-consistencia muestra una disminución del RMSE y de la proporción de errores absolutos mayores que 0,05 conforme aumenta el tamaño de muestra. Este comportamiento se observa en los cuatro estimadores.
+
+Para el coeficiente autorregresivo $\phi$, las curvas de ambos modelos son muy próximas, lo que indica un desempeño similar bajo la configuración simulada. Las diferencias entre los resultados de $\delta$ y $c$ deben interpretarse considerando que representan componentes distintos de los modelos.
+
+## Distribución de las estimaciones
+
+Los diagramas de caja permiten examinar la ubicación, la dispersión y los valores extremos de las estimaciones para cada tamaño de muestra. La línea roja discontinua representa el parámetro verdadero.
+
+```{r}
+#| label: fig-distribuciones-estimadores
+#| fig-cap: "Distribuciones Monte Carlo de los estimadores según el tamaño de muestra. La línea roja indica el valor verdadero."
+#| fig-width: 9
+#| fig-height: 7
+
+local({
+  opciones_graficas <- par(
+    mfrow = c(2, 2),
+    mar = c(4, 4.5, 1, 1)
+  )
+  on.exit(par(opciones_graficas))
+
+  graficar_distribucion <- function(
+    columna, verdadero, etiqueta_y, color
+  ) {
+
+    grupos <- lapply(
+      tamanos_simulacion,
+      function(n_actual) {
+        resultados_simulacion[
+          resultados_simulacion$n == n_actual,
+          columna
+        ]
+      }
+    )
+
+    boxplot(
+      grupos,
+      names = tamanos_simulacion,
+      main = "",
+      xlab = "Tamaño de muestra",
+      ylab = etiqueta_y,
+      col = color,
+      border = "#24557A",
+      outline = TRUE,
+      pch = 16,
+      cex = 0.35,
+      ylim = range(c(unlist(grupos), verdadero))
+    )
+
+    abline(
+      h = verdadero,
+      col = "#B22222",
+      lty = 2,
+      lwd = 2
+    )
+  }
+
+  graficar_distribucion(
+    "delta_hat",
+    delta_verdadero,
+    expression(hat(delta) ~ "(con tendencia)"),
+    "#BCD8E8"
+  )
+
+  graficar_distribucion(
+    "phi_hat_tendencia",
+    phi_verdadero,
+    expression(hat(phi) ~ "(con tendencia)"),
+    "#BCD8E8"
+  )
+
+  graficar_distribucion(
+    "c_hat",
+    c_verdadero,
+    expression(hat(c) ~ "(con constante)"),
+    "#F2D2B6"
+  )
+
+  graficar_distribucion(
+    "phi_hat_constante",
+    phi_verdadero,
+    expression(hat(phi) ~ "(con constante)"),
+    "#F2D2B6"
+  )
+})
+```
+
+La @fig-distribuciones-estimadores muestra una reducción de la dispersión de las estimaciones al aumentar el tamaño de muestra. Las cajas y los bigotes se estrechan, mientras que las medianas se aproximan a los valores verdaderos señalados por las líneas rojas. Para $\phi$, se observa una tendencia a la subestimación en muestras pequeñas, que se atenúa conforme aumenta $n$.
+
+Los puntos situados fuera de los bigotes representan estimaciones extremas respecto a la distribución de cada grupo; su presencia no implica errores en la simulación.
+
+## Conclusión
+
+La simulación proporciona evidencia compatible con la consistencia de los estimadores de mínimos cuadrados de $\delta$ y $\phi$ en el modelo con tendencia, y de $c$ y $\phi$ en el modelo con constante. Para los tamaños considerados, el aumento de $n$ reduce el sesgo absoluto, la dispersión, el RMSE y la proporción de estimaciones cuyo error absoluto supera 0,05.
+
+La estimación del coeficiente autorregresivo $\phi$ presenta un comportamiento similar en ambos modelos. Para $n=1000$, sus medias son 0,1984 y 0,1985, próximas al valor verdadero de 0,2, y sus RMSE son 0,0300 y 0,0314, respectivamente. Así, bajo la configuración evaluada, incorporar una tendencia determinística correctamente especificada no impide estimar con precisión el coeficiente autorregresivo.
+
+Aunque el estimador de $\delta$ presenta un RMSE menor que el de $c$, estos parámetros tienen interpretaciones diferentes. Esta comparación no permite establecer una superioridad general de un modelo sobre el otro.
+
+Se concluye que los resultados numéricos y gráficos respaldan la concentración de los estimadores alrededor de sus parámetros verdaderos conforme aumenta la muestra. Esta evidencia corresponde a los parámetros, tamaños de muestra y tolerancia utilizados; no sustituye una demostración matemática de consistencia.
+
+# Pregunta 4: Modelos de espacio-estado y filtro de Kalman
+
+## Modelos de espacio-estado
+
+Un modelo de espacio-estado describe una serie mediante dos elementos: las observaciones disponibles y un estado que representa la situación del sistema en cada instante. Este estado puede reunir componentes como el nivel, la tendencia o la estacionalidad. Su interpretación depende del modelo utilizado.
+
+Una representación lineal es:
+
+$$
+y_t=d_t+Z_t\alpha_t+e_t,
+\qquad e_t\sim N(0,H_t).
+$$ {#eq-observacion-estado}
+
+$$
+\alpha_{t+1}=b_t+T_t\alpha_t+R_t\eta_t,
+\qquad \eta_t\sim N(0,Q_t).
+$$ {#eq-transicion-estado}
+
+La @eq-observacion-estado relaciona el estado $\alpha_t$ con el dato observado $y_t$. La @eq-transicion-estado describe cómo evoluciona el estado entre dos instantes consecutivos.
+
+Las matrices $Z_t$ y $T_t$ determinan, respectivamente, la relación entre estados y observaciones y la dinámica del sistema. Los términos $d_t$ y $b_t$ incorporan componentes determinísticos, mientras que $R_t$ determina cómo las perturbaciones afectan al estado.
+
+Es importante distinguir los dos ruidos: $e_t$ corresponde a la ecuación de observación y $\eta_t$ a la evolución del estado. Sus covarianzas son $H_t$ y $Q_t$. En la formulación habitual se supone que los ruidos son independientes entre sí, a través del tiempo y del estado inicial.
+
+Esta estructura permite representar distintos modelos de series de tiempo dentro de un mismo marco, incluidos modelos autorregresivos y de componentes no observados.
+
+## Filtro de Kalman
+
+El filtro de Kalman estima el estado de manera recursiva: combina una predicción basada en el modelo con la información aportada por cada nueva observación. En un modelo lineal gaussiano, con estado inicial gaussiano y parámetros conocidos, calcula la media y la covarianza de la distribución condicional del estado.
+
+Antes de observar $y_t$, se dispone de una predicción del estado $a_t$ y de su incertidumbre $P_t$. Al recibir el dato, se calcula la innovación:
+
+$$
+v_t=y_t-\widehat y_{t\mid t-1}.
+$$ {#eq-innovacion-kalman}
+
+La innovación mide la diferencia entre el dato observado y su predicción. No debe confundirse con la perturbación $\eta_t$ de la ecuación de estado.
+
+La ganancia de Kalman determina cuánto modifica esta innovación la predicción inicial. En el caso escalar $y_t=d_t+\alpha_t+e_t$, se obtiene:
+
+$$
+F_t=P_t+H_t,
+\qquad
+K_t=\frac{P_t}{F_t}.
+$$ {#eq-ganancia-kalman}
+
+$$
+a_t^{*}=a_t+K_tv_t,
+\qquad
+P_t^{*}=(1-K_t)P_t.
+$$ {#eq-actualizacion-kalman}
+
+Aquí, $a_t^{*}$ y $P_t^{*}$ representan la media y la varianza del estado después de incorporar $y_t$. A continuación, la ecuación de transición permite predecir el estado del siguiente instante.
+
+Cuando la incertidumbre de medición es grande respecto a la del estado predicho, la corrección es pequeña. Cuando la observación es relativamente precisa, recibe mayor peso.
+
+El procedimiento también tiene una interpretación bayesiana: la distribución predictiva del estado se actualiza mediante la información de la nueva observación para obtener su distribución posterior.
+
+## Predicción, filtrado y suavizado
+
+Estos procedimientos se distinguen por la información utilizada:
+
+-   **Predicción:** estima el estado en $t$ utilizando las observaciones anteriores a $t$.
+-   **Filtrado:** estima el estado en $t$ utilizando las observaciones hasta $t$, incluida $y_t$.
+-   **Suavizado:** estima el estado en $t$ utilizando también las observaciones posteriores, hasta el final de la muestra.
+
+Por tanto, filtrar no significa necesariamente producir una curva más lisa. El resultado depende de la representación del modelo y de las incertidumbres asignadas a sus componentes.
+
+Las innovaciones y sus varianzas también permiten construir la verosimilitud del modelo, que puede utilizarse para estimar parámetros desconocidos.
+
+## Simulación del proceso AR(1)
+
+Se simulan 150 observaciones del proceso:
+
+$$
+y_t=0{,}8+0{,}75y_{t-1}+\omega_t,
+\qquad
+\omega_t\overset{\text{iid}}{\sim}N(0,1).
+$$ {#eq-ar1-kalman}
+
+Como $|0{,}75|<1$, el componente autorregresivo es estable. La media de su distribución estacionaria es:
+
+$$
+\mu=\frac{0{,}8}{1-0{,}75}=3{,}2.
+$$ {#eq-media-ar1-kalman}
+
+Se utiliza la condición inicial fija $y_0=\mu$. Esta elección sitúa el proceso inicialmente en su media, aunque no equivale a generar el estado inicial desde la distribución estacionaria.
+
+La simulación se realiza mediante la recursión del modelo, sin utilizar funciones específicas de simulación de series temporales.
+
+```{r}
+#| label: fig-simulacion-ar1-kalman
+#| fig-cap: "Serie AR(1) simulada con 150 observaciones. La línea discontinua representa la media teórica de 3,2."
+#| fig-width: 8
+#| fig-height: 4.5
+
+set.seed(20261010)
+
+n_kalman <- 150L
+c_kalman <- 0.8
+phi_kalman <- 0.75
+varianza_proceso <- 1
+
+mu_kalman <- c_kalman / (1 - phi_kalman)
+y0_kalman <- mu_kalman
+
+omega_kalman <- rnorm(
+  n_kalman,
+  mean = 0,
+  sd = sqrt(varianza_proceso)
+)
+
+# Primera posición: y_0; posiciones restantes: y_1, ..., y_n
+trayectoria_kalman <- numeric(n_kalman + 1L)
+trayectoria_kalman[1] <- y0_kalman
+
+for (t in seq_len(n_kalman)) {
+  trayectoria_kalman[t + 1L] <-
+    c_kalman +
+    phi_kalman * trayectoria_kalman[t] +
+    omega_kalman[t]
+}
+
+y_kalman <- trayectoria_kalman[-1L]
+
+plot(
+  seq_len(n_kalman),
+  y_kalman,
+  type = "l",
+  main = "",
+  xlab = "Tiempo",
+  ylab = expression(y[t]),
+  col = "#24557A",
+  lwd = 1
+)
+
+abline(
+  h = mu_kalman,
+  col = "gray50",
+  lty = 2
+)
+```
+
+## Representación del AR(1) en espacio-estado
+
+Se define el estado centrado como $\alpha_t=y_t-\mu$. La representación equivalente es:
+
+$$
+\alpha_{t+1}=0{,}75\alpha_t+\omega_{t+1},
+\qquad \omega_{t+1}\sim N(0,1).
+$$ {#eq-estado-ar1-kalman}
+
+$$
+y_t=3{,}2+\alpha_t.
+$$ {#eq-observacion-ar1-kalman}
+
+Para comprobar la equivalencia, se sustituye $\alpha_t=y_t-\mu$ en la ecuación de estado:
+
+$$
+y_{t+1}
+=
+\mu(1-0{,}75)+0{,}75y_t+\omega_{t+1}
+=
+0{,}8+0{,}75y_t+\omega_{t+1}.
+$$
+
+La varianza del ruido de estado es $Q=1$ y la del ruido de observación es $H=0$, porque el proceso solicitado no contiene un error adicional de medición.
+
+Por tanto, el estado centrado se comparará con $y_t-\mu$. Para comparar en la escala original, se reconstruirá la observación mediante $\mu+\widehat{\alpha}_{t\mid t}$. Se distinguirá esta estimación filtrada de la predicción calculada antes de observar $y_t$.
+
+## Implementación del filtro de Kalman en R base
+
+Se distingue entre el estado predicho $a_t$, calculado antes de observar $y_t$, y el estado filtrado $a_t^{*}$, obtenido después de incorporar esa observación. Sus varianzas son $P_t$ y $P_t^{*}$, respectivamente.
+
+Como $y_0=3{,}2$ es conocido, el estado inicial centrado es $\alpha_0=0$. Por tanto, la predicción para el primer instante se inicializa con:
+
+$$
+a_1=0,
+\qquad P_1=1.
+$$ {#eq-inicializacion-kalman}
+
+La varianza inicial es uno porque, aun conociendo $\alpha_0$, la innovación $\omega_1$ todavía es desconocida.
+
+Para cada observación se aplican las siguientes recursiones:
+
+$$
+\widehat y_{t\mid t-1}=\mu+a_t,
+\qquad
+v_t=y_t-\widehat y_{t\mid t-1}.
+$$ {#eq-prediccion-observacion-kalman}
+
+$$
+F_t=P_t+H,
+\qquad
+K_t=\frac{P_t}{F_t}.
+$$ {#eq-ganancia-ar1-kalman}
+
+$$
+a_t^{*}=a_t+K_tv_t,
+\qquad
+P_t^{*}=(1-K_t)P_t.
+$$ {#eq-filtrado-ar1-kalman}
+
+$$
+a_{t+1}=0{,}75a_t^{*},
+\qquad
+P_{t+1}=0{,}75^2P_t^{*}+Q.
+$$ {#eq-prediccion-estado-kalman}
+
+El algoritmo utiliza únicamente operaciones y estructuras de R base. Las innovaciones empleadas en la simulación no se utilizan como entrada del filtro.
+
+```{r}
+#| label: implementacion-kalman-base
+
+varianza_observacion <- 0
+
+# Predicciones del estado y sus varianzas
+a_predicho <- numeric(n_kalman)
+P_predicho <- numeric(n_kalman)
+
+# Estados filtrados y sus varianzas
+a_filtrado <- numeric(n_kalman)
+P_filtrado <- numeric(n_kalman)
+
+# Predicciones de las observaciones, innovaciones y ganancias
+y_predicho_kalman <- numeric(n_kalman)
+innovacion_kalman <- numeric(n_kalman)
+F_kalman <- numeric(n_kalman)
+K_kalman <- numeric(n_kalman)
+
+# Inicialización coherente con y_0 conocido
+a_predicho[1] <- phi_kalman * (y0_kalman - mu_kalman)
+P_predicho[1] <- varianza_proceso
+
+for (t in seq_len(n_kalman)) {
+
+  # Predicción de la observación
+  y_predicho_kalman[t] <- mu_kalman + a_predicho[t]
+
+  # Innovación y su varianza
+  innovacion_kalman[t] <-
+    y_kalman[t] - y_predicho_kalman[t]
+
+  F_kalman[t] <-
+    P_predicho[t] + varianza_observacion
+
+  # Ganancia de Kalman
+  K_kalman[t] <- P_predicho[t] / F_kalman[t]
+
+  # Actualización del estado y su varianza
+  a_filtrado[t] <-
+    a_predicho[t] + K_kalman[t] * innovacion_kalman[t]
+
+  P_filtrado[t] <-
+    (1 - K_kalman[t]) * P_predicho[t]
+
+  # Predicción del siguiente estado
+  if (t < n_kalman) {
+
+    a_predicho[t + 1L] <- phi_kalman * a_filtrado[t]
+
+    P_predicho[t + 1L] <-
+      phi_kalman^2 * P_filtrado[t] + varianza_proceso
+  }
+}
+
+# Reconstrucción en la escala original
+y_filtrado_kalman <- mu_kalman + a_filtrado
+
+# Estado de referencia: se usa únicamente para la comparación
+estado_real_kalman <- y_kalman - mu_kalman
+
+comparacion_kalman <- data.frame(
+  t = seq_len(n_kalman),
+  y_simulado = y_kalman,
+  Estado_real = estado_real_kalman,
+  Estado_predicho = a_predicho,
+  Estado_filtrado = a_filtrado,
+  y_reconstruido = y_filtrado_kalman,
+  Error_estado = estado_real_kalman - a_filtrado
+)
+```
+
+```{r}
+#| label: tbl-comparacion-estados-kalman
+#| tbl-cap: "Comparación del estado predicho, el estado filtrado y la serie simulada en los primeros diez instantes."
+
+knitr::kable(
+  head(comparacion_kalman, 10),
+  digits = c(0, 4, 4, 4, 4, 4, 4),
+  row.names = FALSE,
+  col.names = c(
+    "t",
+    "y simulado",
+    "Estado real",
+    "Estado predicho",
+    "Estado filtrado",
+    "y reconstruido",
+    "Error del estado"
+  )
+)
+```
+
+La @tbl-comparacion-estados-kalman muestra que el estado filtrado coincide con el estado real centrado y que la observación reconstruida reproduce los valores simulados.
+
+Este resultado se explica porque la ecuación de observación no contiene ruido de medición ($H=0$). Por tanto, la ganancia de Kalman es:
+
+$$
+K_t=\frac{P_t}{P_t+0}=1.
+$$
+
+La actualización del estado se reduce a:
+
+$$
+a_t^{*}
+=
+a_t+\left[y_t-(\mu+a_t)\right]
+=
+y_t-\mu.
+$$
+
+Así, después de observar $y_t$, el estado queda determinado exactamente y su varianza filtrada es cero. Esto no elimina la incertidumbre del siguiente instante, pues la ecuación de transición incorpora una nueva innovación de varianza uno.
+
+La coincidencia entre valores simulados y reconstruidos corresponde al filtrado, no a un pronóstico perfecto.
+
+## Comparación gráfica del filtrado y la predicción
+
+```{r}
+#| label: fig-comparacion-kalman
+#| fig-cap: "Serie simulada y reconstrucción filtrada (panel superior); serie simulada y predicciones a un paso (panel inferior)."
+#| fig-width: 8
+#| fig-height: 7
+
+local({
+  opciones_graficas <- par(
+    mfrow = c(2, 1),
+    mar = c(4, 4, 1, 1)
+  )
+  on.exit(par(opciones_graficas))
+
+  tiempo_kalman <- seq_len(n_kalman)
+
+  # Comparación después de incorporar la observación actual
+  plot(
+    tiempo_kalman,
+    y_kalman,
+    type = "l",
+    main = "",
+    xlab = "Tiempo",
+    ylab = "Valor de la serie",
+    col = "#24557A",
+    lwd = 2
+  )
+
+  lines(
+    tiempo_kalman,
+    y_filtrado_kalman,
+    col = "#C46A28",
+    lty = 2,
+    lwd = 1.5
+  )
+
+  legend(
+    "topright",
+    legend = c("Serie simulada", "Reconstrucción filtrada"),
+    col = c("#24557A", "#C46A28"),
+    lty = c(1, 2),
+    lwd = c(2, 1.5),
+    bty = "n",
+    cex = 0.85
+  )
+
+  # Comparación antes de incorporar la observación actual
+  plot(
+    tiempo_kalman,
+    y_kalman,
+    type = "l",
+    main = "",
+    xlab = "Tiempo",
+    ylab = "Valor de la serie",
+    ylim = range(y_kalman, y_predicho_kalman),
+    col = "#24557A",
+    lwd = 1.5
+  )
+
+  lines(
+    tiempo_kalman,
+    y_predicho_kalman,
+    col = "#C46A28",
+    lty = 2,
+    lwd = 1.5
+  )
+
+  legend(
+    "topright",
+    legend = c("Serie simulada", "Predicción a un paso"),
+    col = c("#24557A", "#C46A28"),
+    lty = c(1, 2),
+    lwd = 1.5,
+    bty = "n",
+    cex = 0.85
+  )
+})
+```
+
+La @fig-comparacion-kalman muestra que la reconstrucción filtrada coincide con la serie simulada. Esta coincidencia se debe a la ausencia de ruido de medición: después de observar $y_t$, el estado centrado queda determinado por $y_t-\mu$.
+
+En cambio, las predicciones a un paso difieren de las observaciones. Con los parámetros conocidos y la condición inicial utilizada:
+
+$$
+\widehat y_{t\mid t-1}=0{,}8+0{,}75y_{t-1},
+$$
+
+por lo que el error de predicción corresponde a la innovación $\omega_t$, que es desconocida antes de observar $y_t$.
+
+## Verificación numérica
+
+Se calculan los errores de filtrado y predicción para las 150 observaciones. También se comprueba que las innovaciones del filtro reproduzcan las perturbaciones utilizadas en la simulación.
+
+```{r}
+#| label: tbl-verificacion-kalman
+#| tbl-cap: "Verificación numérica del filtro de Kalman sobre las 150 observaciones."
+
+error_filtrado_kalman <- y_kalman - y_filtrado_kalman
+error_prediccion_kalman <- y_kalman - y_predicho_kalman
+
+indicadores_kalman <- c(
+  max(abs(estado_real_kalman - a_filtrado)),
+  max(abs(error_filtrado_kalman)),
+  sqrt(mean(error_filtrado_kalman^2)),
+  sqrt(mean(error_prediccion_kalman^2)),
+  max(abs(innovacion_kalman - omega_kalman)),
+  max(abs(K_kalman - 1)),
+  max(abs(P_filtrado))
+)
+
+tabla_verificacion_kalman <- data.frame(
+  Indicador = c(
+    "Máximo error absoluto del estado filtrado",
+    "Máximo error absoluto de reconstrucción",
+    "RMSE de reconstrucción filtrada",
+    "RMSE de predicción a un paso",
+    "Máxima diferencia entre innovación y omega",
+    "Máxima desviación de la ganancia respecto a uno",
+    "Máxima varianza filtrada"
+  ),
+  Valor = formatC(
+    indicadores_kalman,
+    format = "e",
+    digits = 4
+  )
+)
+
+knitr::kable(
+  tabla_verificacion_kalman,
+  row.names = FALSE
+)
+```
+
+### Verificación numérica y conclusiones
+
+La @tbl-verificacion-kalman confirma que el filtro recupera el estado con precisión numérica: el máximo error absoluto es aproximadamente $4,44 \times 10^{-16}$. Asimismo, la reconstrucción de la serie tiene un RMSE de $1,85 \times 10^{-16}$, prácticamente cero.
+
+Este resultado se explica porque la ecuación de observación no contiene ruido de medición. Por tanto, la ganancia de Kalman es igual a uno y, después de incorporar cada observación, la varianza del estado filtrado es cero. Así, el estado filtrado satisface $\widehat{\alpha}_{t|t}=y_t-3,2$, y la reconstrucción $3,2+\widehat{\alpha}_{t|t}$ coincide con la serie simulada.
+
+La predicción a un paso presenta un comportamiento diferente. Su RMSE es 1,0136, cercano a la desviación estándar de las perturbaciones del modelo. Además, las innovaciones calculadas por el filtro coinciden, salvo diferencias de precisión numérica, con las perturbaciones utilizadas en la simulación. Esto verifica que la recursión reproduce la predicción del proceso AR(1).
+
+En conclusión, la implementación en R base recupera correctamente los estados de la representación de espacio-estado. La coincidencia entre la serie reconstruida y los datos se debe a la ausencia de ruido observacional y al uso de parámetros conocidos; no implica que los valores futuros puedan pronosticarse sin error. Antes de observar cada dato permanece la incertidumbre asociada a la nueva perturbación del proceso.
+
+# Bibliografía {.unnumbered}
+
+1.  Kwiatkowski, D., Phillips, P. C. B., Schmidt, P., y Shin, Y. (1992). Testing the null hypothesis of stationarity against the alternative of a unit root: How sure are we that economic time series have a unit root? *Journal of Econometrics, 54*(1–3), 159–178. https://doi.org/10.1016/0304-4076(92)90104-Y
+
+2.  Breusch, T. S. (1978). Testing for autocorrelation in dynamic linear models. *Australian Economic Papers, 17*(31), 334–355. https://doi.org/10.1111/j.1467-8454.1978.tb00635.x
+
+3.  Osborn, D. R., Chui, A. P. L., Smith, J. P., y Birchenhall, C. R. (1988). Seasonality and the order of integration for consumption. *Oxford Bulletin of Economics and Statistics, 50*(4), 361–377. https://doi.org/10.1111/j.1468-0084.1988.mp50004002.x
+
+4.  Durbin, J., y Koopman, S. J. (2012). *Time series analysis by state space methods* (2.ª ed.). Oxford University Press.
+
+5.  Harvey, A. C. (1990). *Forecasting, structural time series models and the Kalman filter*. Cambridge University Press.
+
+6.  Hubbard, A. (2024, 7 de marzo). *Kalman filter for state space models*. https://cran.r-project.org/web/packages/kalmanfilter/vignettes/kalmanfilter_vignette.html
